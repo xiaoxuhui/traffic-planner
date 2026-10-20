@@ -180,7 +180,23 @@
  $('reset').addEventListener('click',()=>{setRunning(false);sim.reset();renderMotion();renderStats();toast('模拟已重置，路网设计保留');});
  $('undo').addEventListener('click',()=>history(true));$('redo').addEventListener('click',()=>history(false));$('save').addEventListener('click',()=>save(true));
  $('new-map').addEventListener('click',()=>{selection=null;anchor=null;hover=null;switchTool('road');edit(()=>{map=C.empty();},'空白地图已就绪，可撤销恢复上一个方案');});
- $('demo').addEventListener('click',()=>{selection=null;edit(()=>{map=C.demo();},'示例路网已载入，点击开始模拟');});
+ function examplePreview(m){
+  const roads=m.roads.map(r=>'<path d="'+path([r.a,r.b])+'"/>').join('');
+  const bridges=m.bridges.map(b=>{const [x,y]=pos(b.node);return '<g transform="translate('+x+' '+y+') rotate('+(b.over==='ew'?0:90)+')"><path d="M-32 4H32" stroke="#0d2119" stroke-width="38"/><path d="M-32 0H32" stroke="#bfd09a" stroke-width="26"/></g>';}).join('');
+  const marks=m.sources.map(s=>{const [cx,cy]=pos(s.node);return '<circle cx="'+cx+'" cy="'+cy+'" r="17" fill="#c6f39d"/>';}).join('')+m.exits.map(n=>{const [cx,cy]=pos(n);return '<circle cx="'+cx+'" cy="'+cy+'" r="13" fill="#e7ae7b"/>';}).join('');
+  return '<svg class="example-preview" viewBox="0 0 1040 720" aria-hidden="true"><g fill="none" stroke="#8fa78b" stroke-width="23" stroke-linecap="round">'+roads+'</g>'+bridges+marks+'</svg>';
+ }
+ function openExamples(){
+  if(!$('example-cards').children.length)$('example-cards').innerHTML=window.TrafficExamples.catalog.map((e,i)=>{const m=window.TrafficExamples.create(e.id);return '<button class="example-card" data-example="'+e.id+'">'+examplePreview(m)+'<span class="example-tag">0'+(i+1)+' / '+escape(e.tag)+'</span><strong>'+escape(e.name)+'</strong><span class="example-description">'+escape(e.description)+'</span><span class="example-stats">'+m.sources.length+' 个入口 · '+m.bridges.length+' 处跨线 · '+m.routes.length+' 条路线 <b>载入 →</b></span></button>';}).join('');
+  $('examples').showModal();
+ }
+ $('demo').addEventListener('click',openExamples);$('examples-open').addEventListener('click',openExamples);$('close-examples').addEventListener('click',()=>$('examples').close());
+ $('example-cards').addEventListener('click',e=>{
+  const card=e.target.closest('[data-example]');if(!card)return;const item=window.TrafficExamples.catalog.find(x=>x.id===card.dataset.example),next=window.TrafficExamples.create(item.id),same=JSON.stringify(map)===JSON.stringify(next),message=item.name+'已载入，点击开始模拟；可撤销恢复原图';
+  selection=null;anchor=null;hover=null;routeDraft=[];edit(()=>{map=next;},message);
+  if(same){setRunning(false);sim.reset();renderMotion();renderStats();toast(message);}
+  $('examples').close();switchTool('select');
+ });
  $('grid-toggle').addEventListener('click',()=>{showGrid=!showGrid;$('grid').style.display=showGrid?'':'none';$('grid-toggle').classList.toggle('selected',showGrid);$('grid-toggle').setAttribute('aria-pressed',String(showGrid));});
  $('demand').addEventListener('input',e=>$('demand-value').textContent=e.target.value);$('demand').addEventListener('change',e=>edit(()=>{map.demand=Number(e.target.value);},'入口流量已更新'));
  $('inspector').addEventListener('input',e=>{if(e.target.id==='signal-cycle')$('cycle-value').textContent=e.target.value;});
@@ -200,7 +216,7 @@
  $('import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>1024*1024)throw Error('文件过大，请导入 1MB 以内的方案');const imported=C.validate(JSON.parse(await file.text()));selection=null;edit(()=>{map=imported;},'方案已导入');}catch(err){toast(err instanceof SyntaxError?'JSON 格式有误，方案未改变':err.message);}e.target.value='';});
  $('help').addEventListener('click',()=>$('guide').showModal());$('close-help').addEventListener('click',()=>$('guide').close());$('guide-start').addEventListener('click',()=>$('guide').close());
  document.addEventListener('keydown',e=>{
-  if($('guide').open||e.target.closest('input,select,textarea'))return;
+  if($('guide').open||$('examples').open||e.target.closest('input,select,textarea'))return;
   if(e.key==='Escape'){anchor=null;hover=null;routeDraft=[];renderPreview();return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();history(!e.shiftKey);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();history(false);return;}
