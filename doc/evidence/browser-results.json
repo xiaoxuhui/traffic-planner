@@ -30,6 +30,17 @@
     "I17 touch drawing and overpass tool on mobile",
     "I19 corrupt saved layout falls back to blank",
     "I20 mobile sidebar headings have distinct layout",
+    "I30 example gallery closes without replacing the design or triggering background shortcuts",
+    "I31 mobile gallery can load a complex example and undo to the previous design",
+    "I32 city loads its full network and cars actually reach an exit",
+    "I32 elevated loads its full network and cars actually reach an exit",
+    "I32 diamond loads its full network and cars actually reach an exit",
+    "I32 cloverleaf loads its full network and cars actually reach an exit",
+    "I32 panlong loads its full network and cars actually reach an exit",
+    "I32 ring loads its full network and cars actually reach an exit",
+    "I34 reloading the same example resets and pauses the simulation",
+    "I33 loaded example persists after refresh",
+    "I29 new automatic traffic actually uses the previously ignored bypass",
     "I18 no browser errors"
   ],
   "errors": []
