@@ -12,6 +12,7 @@
     "I06 signal green time preserves selected phase",
     "I21 same entry spawns cars towards two different exits",
     "I07 run, 4x speed, arrival and pause",
+    "I28 entry flow and pause reasons are visible",
     "I08 reset preserves design and clears simulation",
     "I09 erase facility, undo and redo",
     "I10 persistence after reload",

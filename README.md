@@ -27,6 +27,8 @@ node scripts/serve.js
 
 设计自动保存到当前浏览器/设备。JSON 导出可用于备份和迁移，导入会验证数据。隐私模式或存储受限时请使用导出。
 
+各入口独立根据自己的道路空位发车，无全局 180 辆停发限制。入口前方排队时会等待腾位，侧栏显示等待原因；切换其他标签页会自动暂停，可点击开始模拟继续。
+
 ## 验证
 `node --test`；`node scripts/build.js` 构建后启动服务，再执行 `node scripts/browser-check.js` 运行浏览器检查（需 playwright@1.62.1，可通过 PLAYWRIGHT_MODULE 指定已有模块）。真实浏览器交互结果见 `doc/第一版本测试报告.md`。
 
