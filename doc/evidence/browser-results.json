@@ -3,6 +3,7 @@
   "browser": "151.0.7922.34",
   "checks": [
     "I00 fresh session starts with an unobstructed blank grid",
+    "I25 drag crossing, explicit endpoint joins and user-selected lower road",
     "I01 empty state and guarded start",
     "I02 pointer drag draws continuous road",
     "I03 two-click drawing joins roads",
@@ -19,6 +20,8 @@
     "I22 overpass blocks turns between layers",
     "I23 deck selection, persistence, removal and undo",
     "I24 upper and lower cars render in separate layers",
+    "I26 explicit waypoint route followed, multiple routes split to different exits",
+    "I27 broken saved plan pauses cars without automatic rerouting",
     "I13 keyboard drawing and history shortcuts",
     "I14 desktop example and layout 1440x1000",
     "I15 mobile blank-map button, pointer tools and layout 390x844",
