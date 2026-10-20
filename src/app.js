@@ -2,8 +2,9 @@
 (function(){
  'use strict';
  const C=window.TrafficCore,{Simulation}=window.TrafficSim,$=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
- const STORE='flow-traffic-layout-v1', tools=['select','road','direction','signal','source','exit','erase'];
+ const STORE='flow-traffic-layout-v1', tools=['select','road','direction','signal','source','exit','erase','bridge'];
  const hints={select:'点击入口查看随机分流路线；点击道路或红绿灯，调整它的设置。',road:'拖动绘制道路，或依次点击起点与终点。交叉处自动连接。',direction:'点击道路中间，依次切换正向、反向、双向通行。箭头即行驶方向。',signal:'点击道路节点添加红绿灯；选择灯后可调整绿灯时长与初始相位。',source:'点击道路节点设置入口。每辆车出发时，会从所有可达出口里随机选一个。',exit:'点击道路节点设置出口。车辆会随机选择能到达的出口。',erase:'点击路段拆路；点击节点优先拆除入口、出口或灯，再拆除相连道路。'};
+ hints.bridge='点击十字交叉点建桥，再次点击切换哪条路在上。桥上桥下独立直行，不能在这里转弯。';
  let map=C.empty(),tool='road',drawDir='both',anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
  try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
  let sim=new Simulation(map),lastTime=0,lastStats=0;
@@ -26,7 +27,7 @@
  function switchTool(next){tool=next;anchor=null;hover=null;document.querySelectorAll('[data-tool]').forEach(b=>{const active=b.dataset.tool===tool;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});$('tool-hint').textContent=hints[tool];$('road-options').hidden=tool!=='road';$('road-options').style.display=tool==='road'?'':'none';renderPreview();}
  function roadAt(node){return map.roads.find(r=>r.a===node||r.b===node);}
  function inspectNode(node){
-  selection=map.sources.some(s=>s.node===node)?{type:'source',node}:map.signals.some(s=>s.node===node)?{type:'signal',node}:map.exits.includes(node)?{type:'exit',node}:{type:'node',node};renderInspector();renderPreview();
+  selection=C.bridgeAt(map,node)?{type:'bridge',node}:map.sources.some(s=>s.node===node)?{type:'source',node}:map.signals.some(s=>s.node===node)?{type:'signal',node}:map.exits.includes(node)?{type:'exit',node}:{type:'node',node};renderInspector();renderPreview();
  }
  function activateNode(node){
   if(tool==='road'){
@@ -36,6 +37,10 @@
   if(tool==='select'){inspectNode(node);return;}
   if(tool==='direction'){const r=roadAt(node);if(r)activateRoad(C.key(r.a,r.b));else toast('先绘制道路，再设置方向');return;}
   if(!C.nodes(map).includes(node)){toast('请先在这里绘制道路');return;}
+  if(tool==='bridge'){
+   try{const old=C.bridgeAt(map,node),over=old?.over==='ew'?'ns':'ew';selection={type:'bridge',node};edit(()=>C.setBridge(map,node,over),'已设为立交桥，桥上桥下独立直行');}catch(err){toast(err.message);}return;
+  }
+  if(C.bridgeAt(map,node)&&['signal','source','exit'].includes(tool)){toast('跨线点不互通，请把入口、出口或信号灯放在桥外的道路节点');return;}
   if(tool==='source'){
    if(map.exits.includes(node)){toast('这个节点已是出口，请选择其他道路节点');return;}
    selection={type:'source',node};edit(()=>{if(!map.sources.some(s=>s.node===node))map.sources.push({node,target:''});},'已设置入口，每辆车随机选择可达出口');
@@ -46,7 +51,8 @@
    selection={type:'signal',node};edit(()=>{if(!map.signals.some(s=>s.node===node))map.signals.push({node,cycle:6,offset:0});},'已放置信号灯');
   }else if(tool==='erase'){
    selection=null;edit(()=>{
-    if(map.sources.some(s=>s.node===node))map.sources=map.sources.filter(s=>s.node!==node);
+    if(C.bridgeAt(map,node))map.bridges=map.bridges.filter(b=>b.node!==node);
+    else if(map.sources.some(s=>s.node===node))map.sources=map.sources.filter(s=>s.node!==node);
     else if(map.exits.includes(node))map.exits=map.exits.filter(n=>n!==node);
     else if(map.signals.some(s=>s.node===node))map.signals=map.signals.filter(s=>s.node!==node);
     else C.eraseNode(map,node);
@@ -77,6 +83,9 @@
   map.signals.forEach(s=>{const [x,y]=pos(s.node);html+='<g transform="translate('+(x+13)+' '+(y-29)+')"><rect width="23" height="14" rx="5" fill="#17241e" stroke="#739b83"/><circle data-light-ew="'+s.node+'" cx="6.5" cy="7" r="3.3"/><circle data-light-ns="'+s.node+'" cx="16.5" cy="7" r="3.3"/></g>';});
   $('markers').innerHTML=html;
  }
+ function renderBridges(){
+  $('bridges').innerHTML=map.bridges.map(b=>{const [x,y]=pos(b.node);return '<g data-bridge="'+b.node+'" data-over="'+b.over+'" transform="translate('+x+' '+y+') rotate('+(b.over==='ew'?0:90)+')"><path d="M-32 -10H32V21H-32Z" fill="#10251c" opacity=".6"/><path d="M-34 13 -20 6H20L34 13V20L20 13H-20L-34 20Z" fill="#3c5045"/><path d="M-34 -13 -20 -20H20L34 -13V13L20 6H-20L-34 13Z" fill="#758276" stroke="#a4b49b" stroke-width="1"/><path d="M-34 -13 -20 -20H20L34 -13M-34 13 -20 6H20L34 13" stroke="#d7d7b1" stroke-width="2" fill="none"/><path d="M-34 0 -20 -7H20L34 0" fill="none" stroke="#e3dcac" stroke-width="1" stroke-dasharray="5 5"/><path d="M-17 -6 -13 -3 -9 -6M9 -9 13 -12 17 -9" fill="none" stroke="#e0e5c4" stroke-width="1.3"/><rect x="-23" y="17" width="5" height="6" rx="1" fill="#9aab93"/><rect x="18" y="17" width="5" height="6" rx="1" fill="#9aab93"/></g>';}).join('');
+ }
  function renderHits(){
   let html=map.roads.map(r=>{const [ax,ay]=pos(r.a),[bx,by]=pos(r.b);return '<rect class="road-hit" data-road="'+C.key(r.a,r.b)+'" x="'+(Math.min(ax,bx)-9)+'" y="'+(Math.min(ay,by)-9)+'" width="'+(Math.abs(bx-ax)+18)+'" height="'+(Math.abs(by-ay)+18)+'" rx="4" fill="transparent" role="button" aria-label="道路 '+r.a+' 至 '+r.b+'"/>';}).join('');
   for(let y=0;y<C.ROWS;y++)for(let x=0;x<C.COLS;x++){const id=x+','+y,[px,py]=pos(id);const source=map.sources.some(s=>s.node===id),exit=map.exits.includes(id),signal=map.signals.some(s=>s.node===id);html+='<circle class="node-hit" data-node="'+id+'" cx="'+px+'" cy="'+py+'" r="13" role="button" tabindex="'+(id===keyboardNode?'0':'-1')+'" aria-label="网格 '+id+(source?'，入口 '+sourceName(id):exit?'，'+exitName(id):'')+(signal?'，信号灯':'')+'"/>';}
@@ -86,11 +95,14 @@
   let d='';if(anchor){d='<path d="'+path(C.line(anchor,hover||anchor))+'" stroke="#c6f6a4" stroke-width="24" opacity=".35" stroke-linecap="round" fill="none"/><circle cx="'+pos(anchor)[0]+'" cy="'+pos(anchor)[1]+'" r="8" fill="#d4ffb6"/>';}$('draw-preview').innerHTML=d;
   let h='';if(selection?.type==='source'){const s=map.sources.find(s=>s.node===selection.node);if(s)h=C.exitRoutes(map,s.node).map(route=>'<path d="'+path(route)+'" fill="none" stroke="#c8f5a9" stroke-width="3" stroke-dasharray="8 8" opacity=".65"/>').join('');}
   if(selection?.type==='road'){const r=map.roads.find(r=>C.key(r.a,r.b)===selection.key);if(r)h='<path d="'+path([r.a,r.b])+'" fill="none" stroke="#c8f5a9" stroke-width="32" opacity=".25"/>';}
+  if(selection?.type==='bridge'){const [x,y]=pos(selection.node);h='<circle cx="'+x+'" cy="'+y+'" r="35" stroke="#b7e894" stroke-width="2" stroke-dasharray="5 4" fill="none"/>';}
   $('route-preview').innerHTML=h;
  }
  function renderInspector(){
   let html='',type='INSPECTOR';
-  if(selection?.type==='source'){
+  if(selection?.type==='bridge'){
+   const b=C.bridgeAt(map,selection.node);if(b){type='OVERPASS';html='<h4 class="inspect-title">立交桥<span>↟</span></h4><p class="inspect-sub">坐标 ('+b.node+')<br>桥上桥下各自直行，互不转弯</p><label for="bridge-over">哪条道路从上面跨过？</label><select id="bridge-over"><option value="ew"'+(b.over==='ew'?' selected':'')+'>东西道路在上</option><option value="ns"'+(b.over==='ns'?' selected':'')+'>南北道路在上</option></select><button id="bridge-remove">拆桥 · 恢复平面路口</button>';}
+  }else if(selection?.type==='source'){
    const s=map.sources.find(s=>s.node===selection.node);if(s){type='ENTRY';const routes=C.exitRoutes(map,s.node);html='<h4 class="inspect-title">入口 '+sourceName(s.node)+'<span>↗</span></h4><p class="inspect-sub">坐标 ('+s.node+') · '+routes.length+' 个可达出口</p><p class="inspect-sub">每辆车出发时，随机选择一个可达出口。'+(!routes.length?'请先连接出口。':'')+'</p><p class="inspect-sub">虚线显示所有可选路线</p>';}
   }else if(selection?.type==='signal'){
    const s=map.signals.find(s=>s.node===selection.node);if(s){type='SIGNAL';html='<h4 class="inspect-title">路口信号灯<span>●</span></h4><p class="inspect-sub">坐标 ('+s.node+') · 东西 / 南北轮流通行<br>绿灯间隔有 1 秒全红清空路口</p><label for="signal-cycle">每方向绿灯 <output id="cycle-value">'+s.cycle+'</output> 秒</label><input id="signal-cycle" type="range" min="3" max="20" value="'+s.cycle+'"><button id="signal-phase">初相：'+(C.green(s,0,'ew')?'东西绿灯':C.green(s,0,'ns')?'南北绿灯':'全红')+' · 切换</button>';}
@@ -108,11 +120,20 @@
  }
  function renderMotion(){
   const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
-  $('cars').innerHTML=sim.cars.map(c=>{const [ax,ay]=pos(c.path[c.i]),[bx,by]=pos(c.path[c.i+1]),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);const x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6;return '<g data-destination="'+c.path.at(-1)+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';}).join('');
+  let above='',below='';
+  for(const c of sim.cars){
+   const a=c.path[c.i],b=c.path[c.i+1],[ax,ay]=pos(a),[bx,by]=pos(b),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),axis=dx?'ew':'ns';
+   let x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6,under=false,layer='ground';
+   const bridge=C.bridgeAt(map,a)||C.bridgeAt(map,b);
+   if(bridge){const distance=(bridge.node===a?c.p:1-c.p)*40;if(distance<35){under=axis!==bridge.over;layer=under?'under':'over';if(!under){const lift=7*Math.min(1,Math.max(0,(34-distance)/14));if(axis==='ew')y-=lift;else x+=lift;}}}
+   const car='<g data-destination="'+c.path.at(-1)+'" data-layer="'+layer+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';
+   if(under)below+=car;else above+=car;
+  }
+  $('under-cars').innerHTML=below;$('cars').innerHTML=above;
   map.signals.forEach(s=>{const ew=document.querySelector('[data-light-ew="'+s.node+'"]'),ns=document.querySelector('[data-light-ns="'+s.node+'"]');if(ew)ew.setAttribute('fill',C.green(s,sim.time,'ew')?'#b7ed88':'#dc7970');if(ns)ns.setAttribute('fill',C.green(s,sim.time,'ns')?'#b7ed88':'#dc7970');});
  }
  function render(){
-  renderRoads();renderMarkers();renderHits();renderPreview();renderInspector();renderMotion();renderStats();
+  renderRoads();renderBridges();renderMarkers();renderHits();renderPreview();renderInspector();renderMotion();renderStats();
   $('road-count').textContent=map.roads.length;$('map').dataset.roads=map.roads.length;$('demand').value=map.demand;$('demand-value').textContent=map.demand;
   $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;$('map-meta').textContent=map.roads.length?'自由建造 · 网格 25 × 17':'空白地图 · 连接两点开始画路';
   const note=$('network-note');note.classList.remove('warning');
@@ -150,9 +171,10 @@
  $('inspector').addEventListener('change',e=>{
   const id=e.target.id,value=e.target.value;
   if(id==='road-direction')edit(()=>{map.roads.find(r=>C.key(r.a,r.b)===selection.key).dir=value;},'道路方向已更新');
+  if(id==='bridge-over')edit(()=>C.setBridge(map,selection.node,value),'桥上桥下方向已切换');
   if(id==='signal-cycle')edit(()=>{const s=map.signals.find(s=>s.node===selection.node),northSouth=C.green(s,0,'ns');s.cycle=Number(value);s.offset=northSouth?s.cycle+1:0;},'信号周期已更新');
  });
- $('inspector').addEventListener('click',e=>{if(e.target.closest('#signal-phase'))edit(()=>{const s=map.signals.find(s=>s.node===selection.node);s.offset=C.green(s,0,'ew')?s.cycle+1:0;},'信号初始相位已切换');});
+ $('inspector').addEventListener('click',e=>{if(e.target.closest('#signal-phase'))edit(()=>{const s=map.signals.find(s=>s.node===selection.node);s.offset=C.green(s,0,'ew')?s.cycle+1:0;},'信号初始相位已切换');if(e.target.closest('#bridge-remove'))edit(()=>{map.bridges=map.bridges.filter(b=>b.node!==selection.node);selection=null;},'已拆桥，恢复平面路口');});
  $('export').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(map,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='路流-交通方案.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已导出方案 JSON');});
  $('import').addEventListener('click',()=>$('import-file').click());
  $('import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>1024*1024)throw Error('文件过大，请导入 1MB 以内的方案');const imported=C.validate(JSON.parse(await file.text()));selection=null;edit(()=>{map=imported;},'方案已导入');}catch(err){toast(err instanceof SyntaxError?'JSON 格式有误，方案未改变':err.message);}e.target.value='';});
@@ -162,7 +184,7 @@
   if(e.key==='Escape'){anchor=null;hover=null;renderPreview();return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();history(!e.shiftKey);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();history(false);return;}
-  if(!e.ctrlKey&&!e.metaKey&&/^[1-7]$/.test(e.key))switchTool(tools[Number(e.key)-1]);
+  if(!e.ctrlKey&&!e.metaKey&&/^[1-8]$/.test(e.key))switchTool(tools[Number(e.key)-1]);
   if(e.code==='Space'&&!e.target.closest('button,[data-node]')){e.preventDefault();$('run').click();}
  });
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)setRunning(false);});
