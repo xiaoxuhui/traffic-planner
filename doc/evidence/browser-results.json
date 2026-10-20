@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-21",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "I00 fresh session starts with an unobstructed blank grid",
+    "I01 empty state and guarded start",
+    "I02 pointer drag draws continuous road",
+    "I03 two-click drawing joins roads",
+    "I04 source shows all reachable routes with random exits",
+    "I05 direction cycle blocks and restores routes",
+    "I06 signal green time preserves selected phase",
+    "I21 same entry spawns cars towards two different exits",
+    "I07 run, 4x speed, arrival and pause",
+    "I08 reset preserves design and clears simulation",
+    "I09 erase facility, undo and redo",
+    "I10 persistence after reload",
+    "I11 export and reimport roundtrip",
+    "I12 invalid import keeps current design",
+    "I22 overpass blocks turns between layers",
+    "I23 deck selection, persistence, removal and undo",
+    "I24 upper and lower cars render in separate layers",
+    "I13 keyboard drawing and history shortcuts",
+    "I14 desktop example and layout 1440x1000",
+    "I15 mobile blank-map button, pointer tools and layout 390x844",
+    "I16 help dialog and escape",
+    "I17 touch drawing and overpass tool on mobile",
+    "I19 corrupt saved layout falls back to blank",
+    "I20 mobile sidebar headings have distinct layout",
+    "I18 no browser errors"
+  ],
+  "errors": []
+}
