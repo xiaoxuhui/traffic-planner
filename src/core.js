@@ -4,7 +4,7 @@
  const xy=id=>id.split(',').map(Number);
  const valid=id=>typeof id==='string' && /^(0|[1-9]\d*),(0|[1-9]\d*)$/.test(id) && xy(id)[0]<COLS && xy(id)[1]<ROWS;
  const key=(a,b)=>a<b?a+'|'+b:b+'|'+a;
- const empty=()=>({version:1,roads:[],sources:[],exits:[],signals:[],bridges:[],demand:18});
+ const empty=()=>({version:1,roads:[],sources:[],exits:[],signals:[],bridges:[],routes:[],demand:18});
  function line(a,b){
   if(!valid(a)||!valid(b))throw Error('道路坐标超出地图');
   const [x,y]=xy(a),[tx,ty]=xy(b),out=[a]; let cx=x,cy=y;
@@ -13,14 +13,22 @@
   return out;
  }
  function setDirection(r,dir){if(!['both','forward','reverse'].includes(dir))throw Error('无效道路方向');r.dir=dir;}
- function draw(m,a,b,dir='both'){
+ function draw(m,a,b,dir='both',options={}){
   if(!['both','forward','reverse'].includes(dir))throw Error('无效道路方向');
-  const points=line(a,b);
+  const points=line(a,b),oldNeighbors=new Map(points.map(n=>[n,neighbors(m,n,false)]));
   for(let i=1;i<points.length;i++){
    let a=points[i-1],b=points[i],d=dir;
    if(a>b){[a,b]=[b,a];d=dir==='both'?'both':dir==='forward'?'reverse':'forward';}
    const old=m.roads.find(r=>key(r.a,r.b)===key(a,b));
    if(old)old.dir=d;else m.roads.push({a,b,dir:d});
+  }
+  if(options.crossing){
+   const explicit=new Set(options.crossing==='connect'?points:[a,b]);m.bridges=(m.bridges||[]).filter(b=>!explicit.has(b.node));
+   if(options.crossing!=='connect')for(let i=1;i<points.length-1;i++){
+    const node=points[i],[px,py]=xy(points[i-1]),[cx,cy]=xy(node),[nx,ny]=xy(points[i+1]);if(nx-cx!==cx-px||ny-cy!==cy-py)continue;
+    const axis=px===cx?'ns':'ew',old=oldNeighbors.get(node),perpendicular=old.filter(n=>axis==='ew'?xy(n)[0]===cx:xy(n)[1]===cy);
+    if(perpendicular.length===2&&neighbors(m,node,false).length===4&&!m.exits.includes(node)&&!m.sources.some(s=>s.node===node))setBridge(m,node,options.crossing==='over'?axis:axis==='ew'?'ns':'ew');
+   }
   }
   return m;
  }
@@ -61,7 +69,21 @@
   const goals=new Set(target?[target]:m.exits);for(const [node,record] of search(m,start,graph))if(node!==start&&goals.has(node))return reconstruct(record);return null;
  }
  function exitRoutes(m,start,graph=adjacency(m)){
+  const planned=(m.routes||[]).filter(r=>r.nodes[0]===start);if(planned.length)return planned.filter(r=>m.exits.includes(r.nodes.at(-1))&&canFollow(m,r.nodes,graph)).map(r=>[...r.nodes]);
   const found=search(m,start,graph);return m.exits.filter(n=>n!==start&&found.has(n)).map(n=>reconstruct(found.get(n)));
+ }
+ function canFollow(m,points,graph=adjacency(m)){
+  if(!Array.isArray(points)||points.length<1||points.length>1200||!points.every(valid))return false;
+  for(let i=1;i<points.length;i++){
+   if(!(graph.get(points[i-1])||[]).includes(points[i]))return false;
+   if(i>1){if(points[i]===points[i-2])return false;if(bridgeAt(m,points[i-1])){const [px,py]=xy(points[i-2]),[cx,cy]=xy(points[i-1]),[nx,ny]=xy(points[i]);if(nx-cx!==cx-px||ny-cy!==cy-py)return false;}}
+  }
+  return true;
+ }
+ function addRoute(m,points){
+  if(!m.sources.some(s=>s.node===points[0])||!m.exits.includes(points.at(-1))||points.length<2||!canFollow(m,points))throw Error('路线不通：请沿道路方向逐段连接，不能掉头或跨层转弯');
+  if(!m.routes)m.routes=[];if(m.routes.length>=64)throw Error('最多保存 64 条行驶路线');
+  if(!m.routes.some(r=>r.nodes.join('|')===points.join('|')))m.routes.push({nodes:[...points]});
  }
  function cleanup(m){
   const alive=new Set(nodes(m));m.exits=m.exits.filter(n=>alive.has(n));
@@ -69,6 +91,7 @@
   for(const s of m.sources)s.target='';
   m.signals=m.signals.filter(s=>alive.has(s.node));
   m.bridges=(m.bridges||[]).filter(b=>neighbors(m,b.node,false).length===4);
+  m.routes=(m.routes||[]).filter(r=>m.sources.some(s=>s.node===r.nodes[0]));
  }
  function eraseNode(m,node){m.roads=m.roads.filter(r=>r.a!==node&&r.b!==node);cleanup(m);}
  function green(s,time,axis){
@@ -92,6 +115,8 @@
   for(const s of v.signals){if(!s||!alive.has(s.node)||!Number.isFinite(s.cycle)||s.cycle<3||s.cycle>20||!Number.isFinite(s.offset)||s.offset<0||s.offset>42)fail();m.signals.push({node:s.node,cycle:s.cycle,offset:s.offset});}
   const bridges=v.bridges===undefined?[]:v.bridges;if(!Array.isArray(bridges)||bridges.length>425||!unique(bridges.map(b=>b?.node)))fail();
   for(const b of bridges){if(!b||!valid(b.node)||!['ew','ns'].includes(b.over)||neighbors(m,b.node,false).length!==4||m.exits.includes(b.node)||m.sources.some(s=>s.node===b.node)||m.signals.some(s=>s.node===b.node))fail();m.bridges.push({node:b.node,over:b.over});}
+  const routes=v.routes===undefined?[]:v.routes;if(!Array.isArray(routes)||routes.length>64)fail();
+  for(const r of routes){if(!r||!Array.isArray(r.nodes)||r.nodes.length<2||r.nodes.length>1200||!r.nodes.every(valid)||!m.sources.some(s=>s.node===r.nodes[0]))fail();for(let i=1;i<r.nodes.length;i++){const [x,y]=xy(r.nodes[i-1]),[a,b]=xy(r.nodes[i]);if(Math.abs(x-a)+Math.abs(y-b)!==1||i>1&&r.nodes[i]===r.nodes[i-2])fail();}m.routes.push({nodes:[...r.nodes]});}
   m.demand=v.demand;return m;
  }
  function demo(){
@@ -101,5 +126,5 @@
   m.sources=[{node:'1,8',target:''},{node:'12,1',target:''},{node:'5,12',target:''}];
   m.exits=['23,8','12,15','19,4'];m.signals=[{node:'12,8',cycle:6,offset:0},{node:'5,8',cycle:6,offset:3},{node:'19,8',cycle:6,offset:7}];return m;
  }
- return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,exitRoutes,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
+ return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,exitRoutes,canFollow,addRoute,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
 });

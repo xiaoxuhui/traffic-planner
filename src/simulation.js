@@ -36,7 +36,8 @@
    for(let i=0;i<this.map.sources.length;i++){
     this.clocks[i]-=dt;const choices=this.paths[i];if(this.clocks[i]>0||!choices.length||this.cars.length>=180)continue;
     // Choose once per car, keeping its destination while it waits to spawn.
-    const path=this.pending[i]||(this.pending[i]=choices[Math.floor(this.random()*choices.length)]);
+    if(!this.pending[i]){const exits=[...new Set(choices.map(p=>p.at(-1)))],end=exits[Math.floor(this.random()*exits.length)],routes=choices.filter(p=>p.at(-1)===end);this.pending[i]=routes.length===1?routes[0]:routes[Math.floor(this.random()*routes.length)];}
+    const path=this.pending[i];
     if(this.cars.some(c=>c.path[c.i]===path[0]&&c.path[c.i+1]===path[1]&&c.p<GAP))continue;
     this.cars.push({id:this.nextId++,path,i:0,p:0,born:this.time,waiting:false,admitted:false,lock:null,source:i});this.pending[i]=null;this.clocks[i]=60/this.map.demand;
    }
