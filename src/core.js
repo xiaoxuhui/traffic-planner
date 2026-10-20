@@ -65,6 +65,24 @@
   return first;
  }
  function reconstruct(record){const out=[];for(let at=record;at;at=at.parent)out.push(at.node);return out.reverse();}
+ function weightedRoute(m,start,target,edgeCost=()=>1,graph=adjacency(m)){
+  if(!graph.has(start)||start===target)return null;
+  const bridges=new Set((m.bridges||[]).map(b=>b.node)),best=new Map([[start,0]]),heap=[];
+  function push(item){heap.push(item);let i=heap.length-1;while(i>0){const p=(i-1)>>1;if(heap[p].cost<=item.cost)break;heap[i]=heap[p];i=p;}heap[i]=item;}
+  function pop(){const first=heap[0],last=heap.pop();if(heap.length){let i=0;while(i*2+1<heap.length){let child=i*2+1;if(child+1<heap.length&&heap[child+1].cost<heap[child].cost)child++;if(heap[child].cost>=last.cost)break;heap[i]=heap[child];i=child;}heap[i]=last;}return first;}
+  push({node:start,parent:null,key:start,cost:0});
+  while(heap.length){
+   const cur=pop();if(cur.cost!==best.get(cur.key))continue;if(cur.node===target)return reconstruct(cur);
+   for(const next of graph.get(cur.node)||[]){
+    if(cur.parent&&next===cur.parent.node)continue;
+    if(bridges.has(cur.node)&&cur.parent){const [px,py]=xy(cur.parent.node),[cx,cy]=xy(cur.node),[nx,ny]=xy(next);if(nx-cx!==cx-px||ny-cy!==cy-py)continue;}
+    const weight=edgeCost(cur.node,next);if(!Number.isFinite(weight)||weight<0)throw Error('道路通行代价必须为非负有限数');
+    const key=bridges.has(next)?cur.node+'>'+next:next,cost=cur.cost+weight;
+    if(cost<(best.get(key)??Infinity)){best.set(key,cost);push({node:next,parent:cur,key,cost});}
+   }
+  }
+  return null;
+ }
  function route(m,start,target='',graph=adjacency(m)){
   const goals=new Set(target?[target]:m.exits);for(const [node,record] of search(m,start,graph))if(node!==start&&goals.has(node))return reconstruct(record);return null;
  }
@@ -126,5 +144,5 @@
   m.sources=[{node:'1,8',target:''},{node:'12,1',target:''},{node:'5,12',target:''}];
   m.exits=['23,8','12,15','19,4'];m.signals=[{node:'12,8',cycle:6,offset:0},{node:'5,8',cycle:6,offset:3},{node:'19,8',cycle:6,offset:7}];return m;
  }
- return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,exitRoutes,canFollow,addRoute,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
+ return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,weightedRoute,exitRoutes,canFollow,addRoute,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
 });
