@@ -1,0 +1,44 @@
+// Install playwright@1.62.1 or set PLAYWRIGHT_MODULE to an existing module path.
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
+const output=path.resolve(__dirname,'../doc/evidence');fs.mkdirSync(output,{recursive:true});
+const {demo}=require('../src/core.js');
+(async()=>{
+ const browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});
+ const page=await context.newPage(),errors=[],checks=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ const check=(label)=>{checks.push(label);console.log('PASS '+label);};
+ const node=id=>page.locator('[data-node="'+id+'"]');const tool=t=>page.locator('[data-tool="'+t+'"]');
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('flow-traffic-layout-v1')));
+ try{
+  await page.goto(process.env.FLOW_BASE_URL||'http://127.0.0.1:4267');
+  assert.equal(await page.locator('#road-count').innerText(),'0');assert.equal(await page.locator('#scenery > *').count(),0);assert.equal(await page.locator('#empty-state').count(),0);check('I00 fresh session starts with an unobstructed blank grid');
+  await page.locator('#new-map').click();
+  assert.equal(await page.locator('#road-count').innerText(),'0');await page.locator('#run').click();assert.equal(await page.locator('#map').getAttribute('data-running'),'false');check('I01 empty state and guarded start');
+  await node('2,8').dragTo(node('22,8'));assert.equal(await page.locator('#road-count').innerText(),'20');check('I02 pointer drag draws continuous road');
+  await node('12,2').click();await node('12,14').click();assert.equal(await page.locator('#road-count').innerText(),'32');check('I03 two-click drawing joins roads');
+  await tool('source').click();await node('2,8').click();await tool('exit').click();await node('22,8').click();await node('12,14').click();
+  await tool('select').click();await node('2,8').click();await page.locator('#target-exit').selectOption('22,8');assert.equal((await saved()).sources[0].target,'22,8');assert.equal(await page.locator('#route-preview path').count(),1);check('I04 source, multiple exits and explicit target');
+  await tool('direction').click();await page.locator('[data-road="2,8|3,8"]').click();assert.equal((await saved()).roads.find(r=>r.a==='2,8'&&r.b==='3,8').dir,'forward');
+  await page.locator('[data-road="2,8|3,8"]').click();assert.ok((await page.locator('#network-note').innerText()).includes('无法到达'));await page.locator('[data-road="2,8|3,8"]').click();assert.equal((await saved()).roads.find(r=>r.a==='2,8'&&r.b==='3,8').dir,'both');check('I05 direction cycle blocks and restores routes');
+  await tool('signal').click();await node('12,8').click();await page.locator('#signal-phase').click();assert.equal((await saved()).signals[0].offset,7);
+  await page.locator('#signal-cycle').fill('10');await page.locator('#signal-cycle').dispatchEvent('change');assert.equal((await saved()).signals[0].cycle,10);assert.equal((await saved()).signals[0].offset,11);check('I06 signal green time preserves selected phase');
+  await page.locator('#signal-phase').click();await page.locator('#run').click();await page.locator('[data-speed="4"]').click();
+  await page.waitForFunction(()=>Number(document.getElementById('arrived').textContent)>0,{},{timeout:15000});await page.locator('#run').click();const clock=await page.locator('#clock').innerText();await page.waitForTimeout(180);assert.equal(await page.locator('#clock').innerText(),clock);assert.ok(await page.locator('#cars g').count()>0);check('I07 run, 4x speed, arrival and pause');
+  await page.locator('#reset').click();assert.equal(await page.locator('#clock').innerText(),'00:00');assert.equal(await page.locator('#arrived').innerText(),'0');check('I08 reset preserves design and clears simulation');
+  await tool('erase').click();await node('12,8').click();assert.equal((await saved()).signals.length,0);await page.locator('#undo').click();assert.equal((await saved()).signals.length,1);await page.locator('#redo').click();assert.equal((await saved()).signals.length,0);check('I09 erase facility, undo and redo');
+  const before=JSON.stringify(await saved());await page.locator('#save').click();await page.reload();assert.equal(JSON.stringify(await saved()),before);assert.equal(await page.locator('#road-count').innerText(),'32');check('I10 persistence after reload');
+  const downloadPromise=page.waitForEvent('download');await page.locator('#export').click();const download=await downloadPromise;const file=path.join(output,'exported-layout.json');await download.saveAs(file);assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),await saved());
+  await page.locator('#new-map').click();await page.locator('#import-file').setInputFiles(file);assert.equal(await page.locator('#road-count').innerText(),'32');check('I11 export and reimport roundtrip');
+  await page.locator('#import-file').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"version":99}')});assert.equal(await page.locator('#road-count').innerText(),'32');assert.ok((await page.locator('#toast').innerText()).includes('格式无效'));check('I12 invalid import keeps current design');
+  await page.locator('#new-map').click();await tool('road').click();await node('4,4').focus();await page.keyboard.press('Enter');for(let i=0;i<3;i++)await page.keyboard.press('ArrowRight');await page.keyboard.press('Enter');assert.equal(await page.locator('#road-count').innerText(),'3');await page.keyboard.press('Control+z');assert.equal(await page.locator('#road-count').innerText(),'0');await page.keyboard.press('Control+Shift+z');assert.equal(await page.locator('#road-count').innerText(),'3');check('I13 keyboard drawing and history shortcuts');
+  await page.locator('#demo').click();await page.locator('#run').click();await page.waitForFunction(()=>document.getElementById('cars').children.length>=2);await page.locator('#run').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,'desktop.png'),fullPage:true});check('I14 desktop example and layout 1440x1000');
+  await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('#new-map').isVisible(),true);await page.locator('#new-map').click();assert.equal(await tool('road').getAttribute('aria-pressed'),'true');await node('4,8').click();await node('20,8').click();assert.equal(await page.locator('#road-count').innerText(),'16');await tool('source').click();await node('4,8').click();await tool('exit').click();await node('20,8').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,'mobile.png'),fullPage:true});check('I15 mobile blank-map button, pointer tools and layout 390x844');
+  await page.locator('#help').click();assert.equal(await page.locator('#guide').evaluate(el=>el.open),true);await page.keyboard.press('Escape');assert.equal(await page.locator('#guide').evaluate(el=>el.open),false);check('I16 help dialog and escape');
+  const touch=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});const tp=await touch.newPage();await tp.goto(process.env.FLOW_BASE_URL||'http://127.0.0.1:4267');await tp.locator('#new-map').tap();await tp.locator('[data-node="3,8"]').tap();await tp.locator('[data-node="15,8"]').tap();assert.equal(await tp.locator('#road-count').innerText(),'12');await touch.close();check('I17 touch two-point road drawing');
+  await page.evaluate(()=>localStorage.setItem('flow-traffic-layout-v1','broken-json'));await page.reload();assert.equal(await page.locator('#road-count').innerText(),'0');check('I19 corrupt saved layout falls back to blank');
+  await page.setViewportSize({width:1440,height:1000});await page.locator('#demo').click();await tool('select').click();await node('1,8').click();await page.screenshot({path:path.join(output,'desktop.png'),fullPage:true});await page.locator('#new-map').click();await page.screenshot({path:path.join(output,'blank-desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'blank-mobile.png'),fullPage:true});
+  assert.deepEqual(errors,[]);check('I18 no browser errors');
+  fs.writeFileSync(path.join(output,'browser-results.json'),JSON.stringify({date:'2026-10-21',browser:await browser.version(),checks,errors},null,2));console.log('Browser: '+checks.length+' passed, 0 failed');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

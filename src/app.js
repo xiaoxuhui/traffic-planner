@@ -4,8 +4,8 @@
  const C=window.TrafficCore,{Simulation}=window.TrafficSim,$=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
  const STORE='flow-traffic-layout-v1', tools=['select','road','direction','signal','source','exit','erase'];
  const hints={select:'点击入口可指定出口；点击道路或红绿灯，调整它的设置。',road:'拖动绘制道路，或依次点击起点与终点。交叉处自动连接。',direction:'点击道路中间，依次切换正向、反向、双向通行。箭头即行驶方向。',signal:'点击道路节点添加红绿灯；选择灯后可调整绿灯时长与初始相位。',source:'点击道路节点设置入口，再到设施设置里指定车辆要去的出口。',exit:'点击道路节点设置出口。车辆到达这里后离开路网。',erase:'点击路段拆路；点击节点优先拆除入口、出口或灯，再拆除相连道路。'};
- let map=C.demo(),tool='road',drawDir='both',anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
- try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已载入示例路网'),100);}
+ let map=C.empty(),tool='road',drawDir='both',anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
+ try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
  let sim=new Simulation(map),lastTime=0,lastStats=0;
  const pos=id=>{const [x,y]=C.xy(id);return [40+x*40,40+y*40];};
  const path=ids=>ids.map((id,i)=>(i?'L':'M')+pos(id).join(',')).join(' ');
@@ -19,7 +19,7 @@
   $('mode-label').textContent=on?'模拟运行中':'规划模式';$('run-status').textContent=on?'车流运行中':'准备就绪';$('live-tag').textContent=on?'● 运行中':sim.time?'已暂停':'待运行';$('map').dataset.running=String(on);lastTime=0;
  }
  function edit(change,message){
-  const before=JSON.stringify(map);change();C.cleanup(map);const after=JSON.stringify(map);if(before===after){renderInspector();return;}
+  const before=JSON.stringify(map);change();C.cleanup(map);const after=JSON.stringify(map);if(before===after){renderInspector();renderPreview();return;}
   undo.push(before);if(undo.length>60)undo.shift();redo=[];setRunning(false);sim=new Simulation(map);anchor=null;save();render();if(message)toast(message);
  }
  function history(back){const from=back?undo:redo,to=back?redo:undo;if(!from.length)return;to.push(JSON.stringify(map));map=C.validate(JSON.parse(from.pop()));setRunning(false);sim=new Simulation(map);selection=null;anchor=null;save();render();toast(back?'已撤销':'已重做');}
@@ -61,14 +61,6 @@
   if(tool==='direction')edit(()=>C.setDirection(r,{both:'forward',forward:'reverse',reverse:'both'}[r.dir]),'已调整方向，箭头指示通行方向');
   else{renderInspector();renderPreview();}
  }
- function renderScenery(){
-  // Quiet city blocks live between roads and never participate in the simulation.
-  let html='<path d="M25 580 Q90 555 130 610 T265 650" fill="none" stroke="#3e6550" stroke-width="45" opacity=".3"/>';
-  const blocks=[[270,250,120,40],[425,250,55,40],[575,250,95,40],[700,245,50,50],[275,430,65,50],[365,430,110,50],[580,430,60,50],[665,430,90,50],[100,100,90,80],[850,560,100,65],[180,550,110,50],[780,100,70,60]];
-  blocks.forEach(([x,y,w,h],i)=>{html+='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="6" fill="#34503e" stroke="#486047" stroke-width="1" opacity=".65"/><path d="M'+(x+6)+','+(y+6)+'h'+(w-12)+'" stroke="#59704f" opacity=".4"/>';if(i%3===0)html+='<path d="M'+(x+w/2)+','+(y+15)+'v'+(h-23)+'" stroke="#243d2e" stroke-width="5"/>';});
-  [[130,260],[165,280],[880,280],[900,310],[320,110],[355,120],[900,465],[950,490],[80,480],[470,600],[700,600]].forEach(([x,y])=>{html+='<circle cx="'+x+'" cy="'+y+'" r="12" fill="#3e5a3b" stroke="#4d6845"/><circle cx="'+(x-3)+'" cy="'+(y-3)+'" r="6" fill="#496542"/>';});
-  html+='<text x="298" y="320" fill="#6e8763" font-size="10" letter-spacing="4">CENTRAL BLOCK</text><text x="580" y="515" fill="#6e8763" font-size="10" letter-spacing="4">GREEN QUARTER</text>';$('scenery').innerHTML=html;
- }
  function arrow(a,b,fraction,offset=0){const [ax,ay]=pos(a),[bx,by]=pos(b),angle=Math.atan2(by-ay,bx-ax)*180/Math.PI;const x=ax+(bx-ax)*fraction,y=ay+(by-ay)*fraction;return '<path d="m-3 -3 3 3-3 3" fill="none" stroke="#d7d5ad" stroke-width="1.4" opacity=".8" transform="translate('+x+' '+y+') rotate('+angle+') translate(0 '+offset+')"/>';}
  function renderRoads(){
   let outer='',inner='',lanes='',arrows='';
@@ -86,7 +78,7 @@
   $('markers').innerHTML=html;
  }
  function renderHits(){
-  let html=map.roads.map(r=>'<path class="road-hit" data-road="'+C.key(r.a,r.b)+'" d="'+path([r.a,r.b])+'" role="button" aria-label="道路 '+r.a+' 至 '+r.b+'"/>').join('');
+  let html=map.roads.map(r=>{const [ax,ay]=pos(r.a),[bx,by]=pos(r.b);return '<rect class="road-hit" data-road="'+C.key(r.a,r.b)+'" x="'+(Math.min(ax,bx)-9)+'" y="'+(Math.min(ay,by)-9)+'" width="'+(Math.abs(bx-ax)+18)+'" height="'+(Math.abs(by-ay)+18)+'" rx="4" fill="transparent" role="button" aria-label="道路 '+r.a+' 至 '+r.b+'"/>';}).join('');
   for(let y=0;y<C.ROWS;y++)for(let x=0;x<C.COLS;x++){const id=x+','+y,[px,py]=pos(id);const source=map.sources.some(s=>s.node===id),exit=map.exits.includes(id),signal=map.signals.some(s=>s.node===id);html+='<circle class="node-hit" data-node="'+id+'" cx="'+px+'" cy="'+py+'" r="13" role="button" tabindex="'+(id===keyboardNode?'0':'-1')+'" aria-label="网格 '+id+(source?'，入口 '+sourceName(id):exit?'，'+exitName(id):'')+(signal?'，信号灯':'')+'"/>';}
   $('hit-targets').innerHTML=html;
  }
@@ -122,7 +114,7 @@
  function render(){
   renderRoads();renderMarkers();renderHits();renderPreview();renderInspector();renderMotion();renderStats();
   $('road-count').textContent=map.roads.length;$('map').dataset.roads=map.roads.length;$('demand').value=map.demand;$('demand-value').textContent=map.demand;
-  $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;$('empty-state').hidden=map.roads.length>0;
+  $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;$('map-meta').textContent=map.roads.length?'自由建造 · 网格 25 × 17':'空白地图 · 连接两点开始画路';
   const note=$('network-note');note.classList.remove('warning');
   if(!map.roads.length)note.textContent='先画道路，再安排入口与出口。';
   else if(!map.sources.length||!map.exits.length){note.textContent='再设置'+(!map.sources.length?'入口':'')+(!map.sources.length&&!map.exits.length?'和':'')+(!map.exits.length?'出口':'')+'，就能开始模拟。';note.classList.add('warning');}
@@ -150,7 +142,7 @@
  $('run').addEventListener('click',()=>{if(!running&&(!map.sources.length||!map.exits.length||sim.blockedSources.length===map.sources.length)){toast('请先连接道路，并设置有可达路线的入口和出口');return;}anchor=null;renderPreview();setRunning(!running);});
  $('reset').addEventListener('click',()=>{setRunning(false);sim.reset();renderMotion();renderStats();toast('模拟已重置，路网设计保留');});
  $('undo').addEventListener('click',()=>history(true));$('redo').addEventListener('click',()=>history(false));$('save').addEventListener('click',()=>save(true));
- $('new-map').addEventListener('click',()=>{selection=null;edit(()=>{map=C.empty();},'空白地图已就绪，可撤销恢复上一个方案');});
+ $('new-map').addEventListener('click',()=>{selection=null;anchor=null;hover=null;switchTool('road');edit(()=>{map=C.empty();},'空白地图已就绪，可撤销恢复上一个方案');});
  $('demo').addEventListener('click',()=>{selection=null;edit(()=>{map=C.demo();},'示例路网已载入，点击开始模拟');});
  $('grid-toggle').addEventListener('click',()=>{showGrid=!showGrid;$('grid').style.display=showGrid?'':'none';$('grid-toggle').classList.toggle('selected',showGrid);$('grid-toggle').setAttribute('aria-pressed',String(showGrid));});
  $('demand').addEventListener('input',e=>$('demand-value').textContent=e.target.value);$('demand').addEventListener('change',e=>edit(()=>{map.demand=Number(e.target.value);},'入口流量已更新'));
@@ -159,7 +151,7 @@
   const id=e.target.id,value=e.target.value;
   if(id==='target-exit')edit(()=>{map.sources.find(s=>s.node===selection.node).target=value;},'入口目的地已更新');
   if(id==='road-direction')edit(()=>{map.roads.find(r=>C.key(r.a,r.b)===selection.key).dir=value;},'道路方向已更新');
-  if(id==='signal-cycle')edit(()=>{const s=map.signals.find(s=>s.node===selection.node);s.cycle=Number(value);s.offset=C.green(s,0,'ns')?s.cycle+1:0;},'信号周期已更新');
+  if(id==='signal-cycle')edit(()=>{const s=map.signals.find(s=>s.node===selection.node),northSouth=C.green(s,0,'ns');s.cycle=Number(value);s.offset=northSouth?s.cycle+1:0;},'信号周期已更新');
  });
  $('inspector').addEventListener('click',e=>{if(e.target.closest('#signal-phase'))edit(()=>{const s=map.signals.find(s=>s.node===selection.node);s.offset=C.green(s,0,'ew')?s.cycle+1:0;},'信号初始相位已切换');});
  $('export').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(map,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='路流-交通方案.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已导出方案 JSON');});
@@ -176,5 +168,5 @@
  });
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)setRunning(false);});
  function frame(now){if(running){if(lastTime)sim.advance(Math.min((now-lastTime)/1000,0.1)*speed);lastTime=now;renderMotion();if(now-lastStats>150){renderStats();lastStats=now;}}requestAnimationFrame(frame);}
- renderScenery();render();requestAnimationFrame(frame);
+ setRunning(false);render();requestAnimationFrame(frame);
 })();
