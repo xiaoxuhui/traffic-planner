@@ -37,3 +37,10 @@ test('out-of-grid coordinates and zero-length drawings are handled',()=>{
  const m=C.empty(); C.draw(m,'1,1','1,1'); assert.equal(m.roads.length,0);
  assert.throws(()=>C.draw(m,'-1,1','1,1')); assert.throws(()=>C.draw(m,'1,1','25,1'));
 });
+test('reachable exit routes include all reachable destinations and exclude disconnected ones',()=>{
+ const m=C.empty();C.draw(m,'1,1','5,1');C.draw(m,'9,9','10,9');m.exits=['3,1','5,1','10,9'];
+ assert.deepEqual(C.exitRoutes(m,'1,1').map(p=>p.at(-1)),['3,1','5,1']);assert.deepEqual(C.exitRoutes(m,'0,0'),[]);
+});
+test('legacy fixed source targets are cleared on load',()=>{
+ const m=C.demo();m.sources[0].target=m.exits[0];assert.equal(C.validate(m).sources[0].target,'');
+});

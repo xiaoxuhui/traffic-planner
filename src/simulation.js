@@ -2,11 +2,11 @@
  'use strict';
  const GAP=0.44,SPEED=1.15;
  class Simulation{
-  constructor(map){this.map=map;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.route(map,s.node,s.target,this.graph));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3));this.reset();}
-  reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.accumulator=0;}
+  constructor(map,random=Math.random){this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3));this.reset();}
+  reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.accumulator=0;}
   get average(){return this.arrived?this.totalTravel/this.arrived:0;}
   get waiting(){return this.cars.filter(c=>c.waiting).length;}
-  get blockedSources(){return this.map.sources.filter((_,i)=>!this.paths[i]);}
+  get blockedSources(){return this.map.sources.filter((_,i)=>!this.paths[i].length);}
   advance(dt){this.accumulator+=Math.max(0,dt);while(this.accumulator>=1/30-1e-9){this.step(1/30);this.accumulator-=1/30;}}
   step(dt){
    this.time+=dt;
@@ -34,9 +34,11 @@
    }
    this.cars=this.cars.filter(c=>!c.done);
    for(let i=0;i<this.map.sources.length;i++){
-    this.clocks[i]-=dt;const path=this.paths[i];if(this.clocks[i]>0||!path||this.cars.length>=180)continue;
+    this.clocks[i]-=dt;const choices=this.paths[i];if(this.clocks[i]>0||!choices.length||this.cars.length>=180)continue;
+    // Choose once per car, keeping its destination while it waits to spawn.
+    const path=this.pending[i]||(this.pending[i]=choices[Math.floor(this.random()*choices.length)]);
     if(this.cars.some(c=>c.path[c.i]===path[0]&&c.path[c.i+1]===path[1]&&c.p<GAP))continue;
-    this.cars.push({id:this.nextId++,path,i:0,p:0,born:this.time,waiting:false,admitted:false,lock:null,source:i});this.clocks[i]=60/this.map.demand;
+    this.cars.push({id:this.nextId++,path,i:0,p:0,born:this.time,waiting:false,admitted:false,lock:null,source:i});this.pending[i]=null;this.clocks[i]=60/this.map.demand;
    }
   }
  }

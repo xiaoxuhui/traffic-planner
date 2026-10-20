@@ -21,7 +21,22 @@ test('reset clears cars, counters, clock and locks',()=>{const s=new Simulation(
 test('fixed timestep gives the same simulation at different render intervals',()=>{
  const a=new Simulation(simple()),b=new Simulation(simple());for(let i=0;i<600;i++)a.advance(1/30);for(let i=0;i<200;i++)b.advance(0.1);assert.equal(a.arrived,b.arrived);assert.equal(a.cars.length,b.cars.length);assert.ok(Math.abs(a.time-b.time)<1e-6);
 });
-test('empty map is safe and route to selected distant target is honored',()=>{
+test('empty map is safe',()=>{
  const e=new Simulation(C.empty());e.advance(10);assert.equal(e.cars.length,0);
- const m=simple();m.exits.push('3,1');const s=new Simulation(m);s.advance(25);assert.ok(s.destinations['8,1']>0);assert.equal(s.destinations['3,1'],undefined);
+});
+function fork(){const m=C.empty();C.draw(m,'5,1','5,5');C.draw(m,'1,5','9,5');m.sources=[{node:'5,1',target:''}];m.exits=['1,5','9,5'];return m;}
+test('each new car independently chooses among all reachable exits',()=>{
+ let samples=0;const s=new Simulation(fork(),()=>samples++%2?0.999:0);s.advance(50);
+ assert.ok(s.destinations['1,5']>0);assert.ok(s.destinations['9,5']>0);assert.equal(samples,s.nextId-1+s.pending.filter(Boolean).length);
+});
+test('random selection never chooses an unreachable exit',()=>{
+ const m=fork();m.roads.filter(r=>r.a.endsWith(',5')&&r.b.endsWith(',5')&&Number(r.a.split(',')[0])<5).forEach(r=>r.dir='forward');
+ const s=new Simulation(m,()=>0);s.advance(40);assert.ok(s.destinations['9,5']>0);assert.equal(s.destinations['1,5'],undefined);
+});
+test('old fixed destination does not pin newly spawned cars',()=>{
+ const m=fork();m.sources[0].target='9,5';const s=new Simulation(m,()=>0);s.advance(40);assert.ok(s.destinations['1,5']>0);assert.equal(s.destinations['9,5'],undefined);
+});
+test('a queued car keeps its random choice until its entry lane is available',()=>{
+ const m=fork();m.demand=60;m.signals=[{node:'5,2',cycle:20,offset:0}];let samples=0;const s=new Simulation(m,()=>{samples++;return 0;});s.advance(10);
+ assert.ok(s.pending[0]);assert.ok(s.cars.some(c=>c.waiting));const before=samples;s.advance(1);assert.equal(samples,before);
 });

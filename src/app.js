@@ -3,7 +3,7 @@
  'use strict';
  const C=window.TrafficCore,{Simulation}=window.TrafficSim,$=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
  const STORE='flow-traffic-layout-v1', tools=['select','road','direction','signal','source','exit','erase'];
- const hints={select:'点击入口可指定出口；点击道路或红绿灯，调整它的设置。',road:'拖动绘制道路，或依次点击起点与终点。交叉处自动连接。',direction:'点击道路中间，依次切换正向、反向、双向通行。箭头即行驶方向。',signal:'点击道路节点添加红绿灯；选择灯后可调整绿灯时长与初始相位。',source:'点击道路节点设置入口，再到设施设置里指定车辆要去的出口。',exit:'点击道路节点设置出口。车辆到达这里后离开路网。',erase:'点击路段拆路；点击节点优先拆除入口、出口或灯，再拆除相连道路。'};
+ const hints={select:'点击入口查看随机分流路线；点击道路或红绿灯，调整它的设置。',road:'拖动绘制道路，或依次点击起点与终点。交叉处自动连接。',direction:'点击道路中间，依次切换正向、反向、双向通行。箭头即行驶方向。',signal:'点击道路节点添加红绿灯；选择灯后可调整绿灯时长与初始相位。',source:'点击道路节点设置入口。每辆车出发时，会从所有可达出口里随机选一个。',exit:'点击道路节点设置出口。车辆会随机选择能到达的出口。',erase:'点击路段拆路；点击节点优先拆除入口、出口或灯，再拆除相连道路。'};
  let map=C.empty(),tool='road',drawDir='both',anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
  try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
  let sim=new Simulation(map),lastTime=0,lastStats=0;
@@ -38,7 +38,7 @@
   if(!C.nodes(map).includes(node)){toast('请先在这里绘制道路');return;}
   if(tool==='source'){
    if(map.exits.includes(node)){toast('这个节点已是出口，请选择其他道路节点');return;}
-   selection={type:'source',node};edit(()=>{if(!map.sources.some(s=>s.node===node))map.sources.push({node,target:''});},'已设置入口，可在设施设置中指定出口');
+   selection={type:'source',node};edit(()=>{if(!map.sources.some(s=>s.node===node))map.sources.push({node,target:''});},'已设置入口，每辆车随机选择可达出口');
   }else if(tool==='exit'){
    if(map.sources.some(s=>s.node===node)){toast('这个节点已是入口，请选择其他道路节点');return;}
    selection={type:'exit',node};edit(()=>{if(!map.exits.includes(node))map.exits.push(node);},'已设置出口');
@@ -84,19 +84,19 @@
  }
  function renderPreview(){
   let d='';if(anchor){d='<path d="'+path(C.line(anchor,hover||anchor))+'" stroke="#c6f6a4" stroke-width="24" opacity=".35" stroke-linecap="round" fill="none"/><circle cx="'+pos(anchor)[0]+'" cy="'+pos(anchor)[1]+'" r="8" fill="#d4ffb6"/>';}$('draw-preview').innerHTML=d;
-  let h='';if(selection?.type==='source'){const s=map.sources.find(s=>s.node===selection.node);const route=s&&C.route(map,s.node,s.target);if(route)h='<path d="'+path(route)+'" fill="none" stroke="#c8f5a9" stroke-width="4" stroke-dasharray="8 8" opacity=".9"/>';}
+  let h='';if(selection?.type==='source'){const s=map.sources.find(s=>s.node===selection.node);if(s)h=C.exitRoutes(map,s.node).map(route=>'<path d="'+path(route)+'" fill="none" stroke="#c8f5a9" stroke-width="3" stroke-dasharray="8 8" opacity=".65"/>').join('');}
   if(selection?.type==='road'){const r=map.roads.find(r=>C.key(r.a,r.b)===selection.key);if(r)h='<path d="'+path([r.a,r.b])+'" fill="none" stroke="#c8f5a9" stroke-width="32" opacity=".25"/>';}
   $('route-preview').innerHTML=h;
  }
  function renderInspector(){
   let html='',type='INSPECTOR';
   if(selection?.type==='source'){
-   const s=map.sources.find(s=>s.node===selection.node);if(s){type='ENTRY';const route=C.route(map,s.node,s.target);html='<h4 class="inspect-title">入口 '+sourceName(s.node)+'<span>↗</span></h4><p class="inspect-sub">坐标 ('+s.node+') · '+(route?'线路 '+(route.length-1)+' 格':'暂无可达出口')+'</p><label for="target-exit">这股车流开往哪里？</label><select id="target-exit"><option value="">自动 · 最近可达出口</option>'+map.exits.map(n=>'<option value="'+n+'"'+(s.target===n?' selected':'')+'>'+exitName(n)+'</option>').join('')+'</select><p class="inspect-sub">虚线显示规划路线</p>';}
+   const s=map.sources.find(s=>s.node===selection.node);if(s){type='ENTRY';const routes=C.exitRoutes(map,s.node);html='<h4 class="inspect-title">入口 '+sourceName(s.node)+'<span>↗</span></h4><p class="inspect-sub">坐标 ('+s.node+') · '+routes.length+' 个可达出口</p><p class="inspect-sub">每辆车出发时，随机选择一个可达出口。'+(!routes.length?'请先连接出口。':'')+'</p><p class="inspect-sub">虚线显示所有可选路线</p>';}
   }else if(selection?.type==='signal'){
    const s=map.signals.find(s=>s.node===selection.node);if(s){type='SIGNAL';html='<h4 class="inspect-title">路口信号灯<span>●</span></h4><p class="inspect-sub">坐标 ('+s.node+') · 东西 / 南北轮流通行<br>绿灯间隔有 1 秒全红清空路口</p><label for="signal-cycle">每方向绿灯 <output id="cycle-value">'+s.cycle+'</output> 秒</label><input id="signal-cycle" type="range" min="3" max="20" value="'+s.cycle+'"><button id="signal-phase">初相：'+(C.green(s,0,'ew')?'东西绿灯':C.green(s,0,'ns')?'南北绿灯':'全红')+' · 切换</button>';}
   }else if(selection?.type==='road'){
    const r=map.roads.find(r=>C.key(r.a,r.b)===selection.key);if(r){type='ROAD';html='<h4 class="inspect-title">道路方向<span>⇄</span></h4><p class="inspect-sub">A ('+r.a+') → B ('+r.b+')</p><label for="road-direction">通行方式</label><select id="road-direction"><option value="both">⇄ 双向通行</option><option value="forward">→ 单向 A 至 B</option><option value="reverse">← 单向 B 至 A</option></select>';}
-  }else if(selection?.type==='exit'&&map.exits.includes(selection.node)){type='EXIT';html='<h4 class="inspect-title">'+exitName(selection.node)+'</h4><p class="inspect-sub">车辆到达这里后离开路网。<br>选择入口，可以将这儿设为目的地。</p>';}
+  }else if(selection?.type==='exit'&&map.exits.includes(selection.node)){type='EXIT';html='<h4 class="inspect-title">'+exitName(selection.node)+'</h4><p class="inspect-sub">这是车辆可随机选择的目的地。<br>车辆抵达所选出口后离开路网。</p>';}
   else if(selection?.type==='node'&&C.nodes(map).includes(selection.node)){html='<h4 class="inspect-title">道路节点 ('+selection.node+')</h4><p class="inspect-sub">连接 '+C.neighbors(map,selection.node,false).length+' 条道路。<br>可在此设置入口、出口或红绿灯。</p>';}
   $('selection-type').textContent=type;
   $('inspector').innerHTML=html||'<div class="inspect-empty"><svg><use href="#i-cursor"/></svg><p>选择道路或设施<br>查看并调整它的设置</p></div>';
@@ -108,7 +108,7 @@
  }
  function renderMotion(){
   const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
-  $('cars').innerHTML=sim.cars.map(c=>{const [ax,ay]=pos(c.path[c.i]),[bx,by]=pos(c.path[c.i+1]),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);const x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6;return '<g transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';}).join('');
+  $('cars').innerHTML=sim.cars.map(c=>{const [ax,ay]=pos(c.path[c.i]),[bx,by]=pos(c.path[c.i+1]),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);const x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6;return '<g data-destination="'+c.path.at(-1)+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';}).join('');
   map.signals.forEach(s=>{const ew=document.querySelector('[data-light-ew="'+s.node+'"]'),ns=document.querySelector('[data-light-ns="'+s.node+'"]');if(ew)ew.setAttribute('fill',C.green(s,sim.time,'ew')?'#b7ed88':'#dc7970');if(ns)ns.setAttribute('fill',C.green(s,sim.time,'ns')?'#b7ed88':'#dc7970');});
  }
  function render(){
@@ -149,7 +149,6 @@
  $('inspector').addEventListener('input',e=>{if(e.target.id==='signal-cycle')$('cycle-value').textContent=e.target.value;});
  $('inspector').addEventListener('change',e=>{
   const id=e.target.id,value=e.target.value;
-  if(id==='target-exit')edit(()=>{map.sources.find(s=>s.node===selection.node).target=value;},'入口目的地已更新');
   if(id==='road-direction')edit(()=>{map.roads.find(r=>C.key(r.a,r.b)===selection.key).dir=value;},'道路方向已更新');
   if(id==='signal-cycle')edit(()=>{const s=map.signals.find(s=>s.node===selection.node),northSouth=C.green(s,0,'ns');s.cycle=Number(value);s.offset=northSouth?s.cycle+1:0;},'信号周期已更新');
  });

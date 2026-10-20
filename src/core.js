@@ -43,10 +43,16 @@
   }
   return null;
  }
+ function exitRoutes(m,start,graph=adjacency(m)){
+  if(!graph.has(start))return [];
+  const queue=[start],prev=new Map([[start,null]]);
+  for(let i=0;i<queue.length;i++)for(const next of graph.get(queue[i])||[])if(!prev.has(next)){prev.set(next,queue[i]);queue.push(next);}
+  return m.exits.filter(n=>n!==start&&prev.has(n)).map(end=>{const out=[];let at=end;while(at!==null){out.push(at);at=prev.get(at);}return out.reverse();});
+ }
  function cleanup(m){
   const alive=new Set(nodes(m));m.exits=m.exits.filter(n=>alive.has(n));
   m.sources=m.sources.filter(s=>alive.has(s.node)&&!m.exits.includes(s.node));
-  for(const s of m.sources)if(!m.exits.includes(s.target))s.target='';
+  for(const s of m.sources)s.target='';
   m.signals=m.signals.filter(s=>alive.has(s.node));
  }
  function eraseNode(m,node){m.roads=m.roads.filter(r=>r.a!==node&&r.b!==node);cleanup(m);}
@@ -67,7 +73,7 @@
   const alive=new Set(nodes(m));const unique=(arr)=>new Set(arr).size===arr.length;
   if(!unique(v.exits)||!v.exits.every(n=>alive.has(n)))fail();m.exits=[...v.exits];
   if(!unique(v.sources.map(s=>s?.node))||!unique(v.signals.map(s=>s?.node)))fail();
-  for(const s of v.sources){if(!s||!alive.has(s.node)||m.exits.includes(s.node)||typeof s.target!=='string'||s.target!==''&&!m.exits.includes(s.target))fail();m.sources.push({node:s.node,target:s.target});}
+  for(const s of v.sources){if(!s||!alive.has(s.node)||m.exits.includes(s.node)||typeof s.target!=='string'||s.target!==''&&!m.exits.includes(s.target))fail();m.sources.push({node:s.node,target:''});}
   for(const s of v.signals){if(!s||!alive.has(s.node)||!Number.isFinite(s.cycle)||s.cycle<3||s.cycle>20||!Number.isFinite(s.offset)||s.offset<0||s.offset>42)fail();m.signals.push({node:s.node,cycle:s.cycle,offset:s.offset});}
   m.demand=v.demand;return m;
  }
@@ -75,8 +81,8 @@
   const m=empty();
   draw(m,'1,8','23,8');draw(m,'12,1','12,15');
   draw(m,'5,4','19,4');draw(m,'5,12','19,12');draw(m,'5,4','5,12');draw(m,'19,4','19,12');
-  m.sources=[{node:'1,8',target:'23,8'},{node:'12,1',target:'12,15'},{node:'5,12',target:'19,4'}];
+  m.sources=[{node:'1,8',target:''},{node:'12,1',target:''},{node:'5,12',target:''}];
   m.exits=['23,8','12,15','19,4'];m.signals=[{node:'12,8',cycle:6,offset:0},{node:'5,8',cycle:6,offset:3},{node:'19,8',cycle:6,offset:7}];return m;
  }
- return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,cleanup,eraseNode,green,validate,demo};
+ return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,exitRoutes,cleanup,eraseNode,green,validate,demo};
 });
