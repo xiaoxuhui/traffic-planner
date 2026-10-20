@@ -9,7 +9,7 @@
  hints.route='先点入口，再沿道路逐段点击，最后点出口保存。车辆严格沿线行驶；可画多条路线随机分流。Esc 取消。';
  let map=C.empty(),tool='road',drawDir='both',crossingMode='over',routeDraft=[],anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
  try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
- let sim=new Simulation(map),lastTime=0,lastStats=0;
+ let sim=new Simulation(map),lastTime=0,lastStats=0,pauseReason='';
  const pos=id=>{const [x,y]=C.xy(id);return [40+x*40,40+y*40];};
  const path=ids=>ids.map((id,i)=>(i?'L':'M')+pos(id).join(',')).join(' ');
  const sourceName=node=>String.fromCharCode(65+map.sources.findIndex(s=>s.node===node));
@@ -17,9 +17,10 @@
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function toast(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3200);}
  function save(manual=false){try{localStorage.setItem(STORE,JSON.stringify(map));$('save-state').textContent='✓ 已保存到本地';if(manual)toast('方案已保存在此设备');}catch{$('save-state').textContent='保存不可用';toast('浏览器存储不可用，可导出 JSON 保存方案');}}
- function setRunning(on){
-  running=on;$('run').innerHTML='<svg><use href="#i-'+(on?'pause':'play')+'"/></svg><span>'+(on?'暂停模拟':'开始模拟')+'</span>';
+ function setRunning(on,reason=''){
+  running=on;pauseReason=on?'':reason;$('run').innerHTML='<svg><use href="#i-'+(on?'pause':'play')+'"/></svg><span>'+(on?'暂停模拟':'开始模拟')+'</span>';
   $('mode-label').textContent=on?'模拟运行中':'规划模式';$('run-status').textContent=on?'车流运行中':'准备就绪';$('live-tag').textContent=on?'● 运行中':sim.time?'已暂停':'待运行';$('map').dataset.running=String(on);lastTime=0;
+  renderStats();
  }
  function edit(change,message){
   const before=JSON.stringify(map);change();C.cleanup(map);const after=JSON.stringify(map);if(before===after){renderInspector();renderPreview();return;}
@@ -129,6 +130,8 @@
  function renderStats(){
   $('arrived').textContent=sim.arrived;$('active-cars').textContent=sim.cars.length;$('waiting').textContent=sim.waiting;$('travel').textContent=sim.average?sim.average.toFixed(1):'—';
   const secs=Math.floor(sim.time);$('clock').textContent=String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0');
+  const waitingEntries=sim.pending.flatMap((p,i)=>p?['入口 '+String.fromCharCode(65+i)]:[]);
+  $('flow-note').textContent=running?(waitingEntries.length?waitingEntries.join('、')+' 正在等前车腾出位置；其他入口按各自道路空位继续发车。':'各入口按设定流量独立发车中。'):(pauseReason|| (sim.time?'模拟已暂停，点击开始模拟继续发车。':''));
  }
  function renderMotion(){
   const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
@@ -204,7 +207,7 @@
   if(!e.ctrlKey&&!e.metaKey&&/^[1-9]$/.test(e.key))switchTool(tools[Number(e.key)-1]);
   if(e.code==='Space'&&!e.target.closest('button,[data-node]')){e.preventDefault();$('run').click();}
  });
- document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)setRunning(false);});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)setRunning(false,'切换到其他页面时自动暂停，点击开始模拟继续发车。');});
  function frame(now){if(running){if(lastTime)sim.advance(Math.min((now-lastTime)/1000,0.1)*speed);lastTime=now;renderMotion();if(now-lastStats>150){renderStats();lastStats=now;}}requestAnimationFrame(frame);}
  setRunning(false);$('tool-hint').textContent=hints[tool];render();requestAnimationFrame(frame);
 })();
