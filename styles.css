@@ -10,3 +10,5 @@
 @media(max-width:980px){.info-panel>.inspector-heading{display:none}}
 
 @media(max-width:640px){.tools{grid-template-columns:repeat(8,minmax(0,1fr))}.tool{font-size:8px}.tool span{white-space:nowrap}}
+
+#map .bridge-hit:hover,#map .bridge-hit:focus-visible{fill:transparent;stroke:transparent;outline:none}.road-options label:not(:first-child){margin-top:12px}.route-list{max-height:135px;overflow:auto}.route-list button{font-size:9px;justify-content:space-between}@media(max-width:640px){.tools{grid-template-columns:repeat(5,minmax(0,1fr))}.tool{font-size:9px}.road-options{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px}.road-options label:not(:first-child){margin:0}.road-options select{max-width:none}}
