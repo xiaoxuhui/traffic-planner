@@ -4,7 +4,7 @@
  const xy=id=>id.split(',').map(Number);
  const valid=id=>typeof id==='string' && /^(0|[1-9]\d*),(0|[1-9]\d*)$/.test(id) && xy(id)[0]<COLS && xy(id)[1]<ROWS;
  const key=(a,b)=>a<b?a+'|'+b:b+'|'+a;
- const empty=()=>({version:1,roads:[],sources:[],exits:[],signals:[],demand:18});
+ const empty=()=>({version:1,roads:[],sources:[],exits:[],signals:[],bridges:[],demand:18});
  function line(a,b){
   if(!valid(a)||!valid(b))throw Error('道路坐标超出地图');
   const [x,y]=xy(a),[tx,ty]=xy(b),out=[a]; let cx=x,cy=y;
@@ -34,26 +34,41 @@
   return out;
  }
  function adjacency(m){const graph=new Map(nodes(m).map(n=>[n,[]]));for(const r of m.roads){if(r.dir!=='reverse')graph.get(r.a).push(r.b);if(r.dir!=='forward')graph.get(r.b).push(r.a);}return graph;}
- function route(m,start,target='',graph=adjacency(m)){
-  const goals=new Set(target?[target]:m.exits); if(!graph.has(start)||goals.size===0)return null;
-  const queue=[start],prev=new Map([[start,null]]);
+ const bridgeAt=(m,node)=>(m.bridges||[]).find(b=>b.node===node);
+ function setBridge(m,node,over='ew'){
+  if(!['ew','ns'].includes(over))throw Error('请选择东西或南北道路在上');
+  if(neighbors(m,node,false).length!==4)throw Error('请先画出十字交叉的两条道路，再点击交叉点建桥');
+  if(m.exits.includes(node)||m.sources.some(s=>s.node===node))throw Error('请把入口或出口放在跨线点之外');
+  if(!m.bridges)m.bridges=[];const old=bridgeAt(m,node);if(old)old.over=over;else m.bridges.push({node,over});
+  m.signals=m.signals.filter(s=>s.node!==node);
+ }
+ function search(m,start,graph){
+  const first=new Map();if(!graph.has(start))return first;
+  const bridges=new Set((m.bridges||[]).map(b=>b.node)),head={node:start,parent:null},queue=[head],seen=new Set([start]);first.set(start,head);
   for(let i=0;i<queue.length;i++){
-   const n=queue[i];if(goals.has(n)&&n!==start){const path=[];let at=n;while(at!==null){path.push(at);at=prev.get(at);}return path.reverse();}
-   for(const next of graph.get(n)||[])if(!prev.has(next)){prev.set(next,n);queue.push(next);}
+   const cur=queue[i];
+   for(const next of graph.get(cur.node)||[]){
+    if(bridges.has(cur.node)&&cur.parent){const [px,py]=xy(cur.parent.node),[cx,cy]=xy(cur.node),[nx,ny]=xy(next);if(nx-cx!==cx-px||ny-cy!==cy-py)continue;}
+    // At a bridge, entering from a different direction is a distinct state.
+    const state=bridges.has(next)?cur.node+'>'+next:next;if(seen.has(state))continue;seen.add(state);
+    const record={node:next,parent:cur};queue.push(record);if(!first.has(next))first.set(next,record);
+   }
   }
-  return null;
+  return first;
+ }
+ function reconstruct(record){const out=[];for(let at=record;at;at=at.parent)out.push(at.node);return out.reverse();}
+ function route(m,start,target='',graph=adjacency(m)){
+  const goals=new Set(target?[target]:m.exits);for(const [node,record] of search(m,start,graph))if(node!==start&&goals.has(node))return reconstruct(record);return null;
  }
  function exitRoutes(m,start,graph=adjacency(m)){
-  if(!graph.has(start))return [];
-  const queue=[start],prev=new Map([[start,null]]);
-  for(let i=0;i<queue.length;i++)for(const next of graph.get(queue[i])||[])if(!prev.has(next)){prev.set(next,queue[i]);queue.push(next);}
-  return m.exits.filter(n=>n!==start&&prev.has(n)).map(end=>{const out=[];let at=end;while(at!==null){out.push(at);at=prev.get(at);}return out.reverse();});
+  const found=search(m,start,graph);return m.exits.filter(n=>n!==start&&found.has(n)).map(n=>reconstruct(found.get(n)));
  }
  function cleanup(m){
   const alive=new Set(nodes(m));m.exits=m.exits.filter(n=>alive.has(n));
   m.sources=m.sources.filter(s=>alive.has(s.node)&&!m.exits.includes(s.node));
   for(const s of m.sources)s.target='';
   m.signals=m.signals.filter(s=>alive.has(s.node));
+  m.bridges=(m.bridges||[]).filter(b=>neighbors(m,b.node,false).length===4);
  }
  function eraseNode(m,node){m.roads=m.roads.filter(r=>r.a!==node&&r.b!==node);cleanup(m);}
  function green(s,time,axis){
@@ -75,6 +90,8 @@
   if(!unique(v.sources.map(s=>s?.node))||!unique(v.signals.map(s=>s?.node)))fail();
   for(const s of v.sources){if(!s||!alive.has(s.node)||m.exits.includes(s.node)||typeof s.target!=='string'||s.target!==''&&!m.exits.includes(s.target))fail();m.sources.push({node:s.node,target:''});}
   for(const s of v.signals){if(!s||!alive.has(s.node)||!Number.isFinite(s.cycle)||s.cycle<3||s.cycle>20||!Number.isFinite(s.offset)||s.offset<0||s.offset>42)fail();m.signals.push({node:s.node,cycle:s.cycle,offset:s.offset});}
+  const bridges=v.bridges===undefined?[]:v.bridges;if(!Array.isArray(bridges)||bridges.length>425||!unique(bridges.map(b=>b?.node)))fail();
+  for(const b of bridges){if(!b||!valid(b.node)||!['ew','ns'].includes(b.over)||neighbors(m,b.node,false).length!==4||m.exits.includes(b.node)||m.sources.some(s=>s.node===b.node)||m.signals.some(s=>s.node===b.node))fail();m.bridges.push({node:b.node,over:b.over});}
   m.demand=v.demand;return m;
  }
  function demo(){
@@ -84,5 +101,5 @@
   m.sources=[{node:'1,8',target:''},{node:'12,1',target:''},{node:'5,12',target:''}];
   m.exits=['23,8','12,15','19,4'];m.signals=[{node:'12,8',cycle:6,offset:0},{node:'5,8',cycle:6,offset:3},{node:'19,8',cycle:6,offset:7}];return m;
  }
- return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,exitRoutes,cleanup,eraseNode,green,validate,demo};
+ return {COLS,ROWS,xy,valid,key,empty,line,draw,setDirection,nodes,neighbors,adjacency,route,exitRoutes,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
 });

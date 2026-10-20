@@ -2,7 +2,7 @@
  'use strict';
  const GAP=0.44,SPEED=1.15;
  class Simulation{
-  constructor(map,random=Math.random){this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3));this.reset();}
+  constructor(map,random=Math.random){this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3&&!C.bridgeAt(map,n)));this.reset();}
   reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.accumulator=0;}
   get average(){return this.arrived?this.totalTravel/this.arrived:0;}
   get waiting(){return this.cars.filter(c=>c.waiting).length;}
