@@ -1,0 +1,5 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
+const root=path.resolve(__dirname,'..'),html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+test('runtime assets use relative offline-compatible references',()=>{for(const m of html.matchAll(/(?:src|href)="([^"]+)"/g)){assert.ok(!m[1].startsWith('/'));if(m[1].startsWith('./'))assert.ok(fs.existsSync(path.join(root,m[1])));}});
+test('version and local port are consistent',()=>{const pkg=require('../package.json');assert.ok(html.includes('v'+pkg.version));const server=fs.readFileSync(path.join(root,'scripts/serve.js'),'utf8');assert.ok(server.includes('4267'));assert.ok(!server.includes('4173'));});
+test('all referenced HTML ids exist including dynamically generated inspector controls',()=>{const app=fs.readFileSync(path.join(root,'src/app.js'),'utf8');const ids=new Set([...html.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));for(const m of app.matchAll(/id=\\?"([\w-]+)\\?"/g))ids.add(m[1]);for(const m of app.matchAll(/\$\('([\w-]+)'\)/g))assert.ok(ids.has(m[1]),'missing '+m[1]);});
