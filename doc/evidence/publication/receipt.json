@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-21",
+  "repository": "https://github.com/xiaoxuhui/traffic-planner",
+  "release": "https://github.com/xiaoxuhui/traffic-planner/releases/tag/v0.1.0",
+  "sourceRevision": "800ae8c9b2d55e9d50bdc0dfaf59f2a7ea16e3a1",
+  "producerRevision": "19fde2c6d93b2efa8f43320e5fc4c66606b84fda",
+  "version": "0.1.0",
+  "contentCode": 1,
+  "catalogSequence": "26",
+  "catalogAssetId": 662892822,
+  "catalogSha256": "47f72b846b85e3ccbc46b0f940bc0f911ff03df0ffed3e1cac9be1a11ce0a795",
+  "previousSequence": "25",
+  "previousSha256": "ce97ad7a5b7ca5c13e3e78b41b1d55d866c55c8c04e3d3c8dce6dc5878d531c0",
+  "gameAssetId": 662886084,
+  "gameArchiveBytes": 87528,
+  "gameArchiveSha256": "392675062340ef6d9c9a4854468f114b7d6b4824e83729d451e8f3af3a5db5d9",
+  "historyCatalogsVerified": 26,
+  "cumulativeResourcesVerified": 27,
+  "previousGameDescriptorsUnchanged": true,
+  "tests": {
+    "core": 63,
+    "browser": 42,
+    "hall": 87
+  },
+  "ci": {
+    "source": {
+      "id": 39621080134,
+      "head_sha": "800ae8c9b2d55e9d50bdc0dfaf59f2a7ea16e3a1",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/xiaoxuhui/traffic-planner/actions/runs/39621080134"
+    },
+    "hall": {
+      "id": 39621712907,
+      "head_sha": "19fde2c6d93b2efa8f43320e5fc4c66606b84fda",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/xiaoxuhui/game-hub/actions/runs/39621712907"
+    }
+  }
+}

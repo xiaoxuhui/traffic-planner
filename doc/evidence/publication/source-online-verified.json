@@ -1,0 +1,19 @@
+{
+  "releaseId": 419691921,
+  "url": "https://github.com/xiaoxuhui/traffic-planner/releases/tag/v0.1.0",
+  "sourceRevision": "800ae8c9b2d55e9d50bdc0dfaf59f2a7ea16e3a1",
+  "assets": [
+    {
+      "name": "traffic-planner-v0.1.0.zip",
+      "id": 662859811,
+      "bytes": 87528,
+      "sha256": "392675062340ef6d9c9a4854468f114b7d6b4824e83729d451e8f3af3a5db5d9"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "id": 662859920,
+      "bytes": 93,
+      "sha256": "fbc5a61504588c488afa1b5a3242b6f3395135799663337d34212d5acaf232cf"
+    }
+  ]
+}
