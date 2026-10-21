@@ -35,3 +35,9 @@ node scripts/serve.js
 `node --test`；`node scripts/build.js` 构建后启动服务，再执行 `node scripts/browser-check.js` 运行浏览器检查（需 playwright@1.62.1，可通过 PLAYWRIGHT_MODULE 指定已有模块）。真实浏览器交互结果见 `doc/第一版本测试报告.md`。
 
 这是自由沙盒，不设预算或通关条件；车辆使用简化的排队与路口互斥模型，非工程交通预测。
+
+## 游戏大厅
+通过 game-hub v0.4.0 及以上版本的「立即检查」→「游戏目录」安装「路流 · 交通规划」。游戏 ID 为 `traffic-planner`，存储合同为 `traffic-planner-dynamic-v1`。原生导出使用大厅文件保存桥，普通浏览器使用 JSON 下载。浏览器不同 origin（包括 localhost、127.0.0.1 和 file）拥有独立存档，可用导出/导入迁移。发布状态见 [接入记录](doc/发布与大厅接入计划.md)。
+
+## 项目结构与许可
+`src/` 为路网、仿真、案例和界面；`tests/` 为 Node 回归；`scripts/` 为构建、七文件产物核验及浏览器验收；`dist/` 为固定运行资源。源码按 [MIT](LICENSE) 许可发布，不包含第三方运行库。Node 与 Playwright 仅用于开发和验证，静态应用不发布到 npm。

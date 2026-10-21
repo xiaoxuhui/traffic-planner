@@ -41,6 +41,8 @@
     "I34 reloading the same example resets and pauses the simulation",
     "I33 loaded example persists after refresh",
     "I29 new automatic traffic actually uses the previously ignored bypass",
+    "H01 offline hall-shaped subpath loads all relative assets and exports exact JSON through native bridge",
+    "H02 rejected native export shows an error and map edits preserve unrelated storage",
     "I18 no browser errors"
   ],
   "errors": []

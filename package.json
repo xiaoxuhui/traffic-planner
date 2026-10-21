@@ -3,6 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "description": "路流 · 交通规划沙盒",
-  "scripts": {"test": "node --test", "test:browser": "node scripts/browser-check.js", "build": "node scripts/build.js", "serve": "node scripts/serve.js"},
-  "devDependencies": {"playwright": "1.62.1"}
+  "scripts": {
+    "test": "node --test",
+    "test:browser": "node scripts/browser-check.js",
+    "build": "node scripts/build.js",
+    "serve": "node scripts/serve.js",
+    "verify:dist": "node scripts/check-dist.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  },
+  "license": "MIT",
+  "author": "xiaoxuhui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaoxuhui/traffic-planner.git"
+  },
+  "homepage": "https://github.com/xiaoxuhui/traffic-planner#readme",
+  "bugs": "https://github.com/xiaoxuhui/traffic-planner/issues",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "packageManager": "pnpm@11.19.0"
 }

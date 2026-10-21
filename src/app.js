@@ -211,7 +211,13 @@
   if(e.target.closest('#route-start')){const start=selection.node;switchTool('route');routeDraft=[start];hover=start;renderPreview();toast('按行驶顺序逐段点击道路，最后点击出口保存');}
   const remove=e.target.closest('[data-remove-route]');if(remove)edit(()=>map.routes.splice(Number(remove.dataset.removeRoute),1),'已移除这条指定路线');
  });
- $('export').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(map,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='路流-交通方案.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已导出方案 JSON');});
+ $('export').addEventListener('click',()=>{
+  const text=JSON.stringify(map,null,2),name='路流-交通方案.json';
+  try{
+   if(window.GameHubBridge&&typeof window.GameHubBridge.saveFile==='function'){if(window.GameHubBridge.saveFile(name,text)===false)throw Error('大厅未受理保存，请稍后重试');toast('已请求大厅保存方案');return;}
+   const url=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已导出方案 JSON');
+  }catch(err){toast('导出失败：'+err.message);}
+ });
  $('import').addEventListener('click',()=>$('import-file').click());
  $('import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>1024*1024)throw Error('文件过大，请导入 1MB 以内的方案');const imported=C.validate(JSON.parse(await file.text()));selection=null;edit(()=>{map=imported;},'方案已导入');}catch(err){toast(err instanceof SyntaxError?'JSON 格式有误，方案未改变':err.message);}e.target.value='';});
  $('help').addEventListener('click',()=>$('guide').showModal());$('close-help').addEventListener('click',()=>$('guide').close());$('guide-start').addEventListener('click',()=>$('guide').close());
