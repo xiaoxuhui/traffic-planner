@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-21",
+  "date": "2026-10-24",
   "browser": "151.0.7922.34",
   "checks": [
     "I00 fresh session starts with an unobstructed blank grid",
@@ -40,6 +40,10 @@
     "I32 ring loads its full network and cars actually reach an exit",
     "I34 reloading the same example resets and pauses the simulation",
     "I33 loaded example persists after refresh",
+    "R01 draw two different routes from the same entry to the same exit without replacing the other entry plan",
+    "R02 individual preview preserves design; delete one route, undo, redo and refresh preserve other routes",
+    "R03 mobile preview and single deletion work; deleting last entry route returns only that entry to automatic routing",
+    "R04 automatic cars reroute while driving and the visible count confirms it",
     "I29 new automatic traffic actually uses the previously ignored bypass",
     "H01 offline hall-shaped subpath loads all relative assets and exports exact JSON through native bridge",
     "H02 rejected native export shows an error and map edits preserve unrelated storage",
