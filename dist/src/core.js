@@ -65,7 +65,7 @@
   return first;
  }
  function reconstruct(record){const out=[];for(let at=record;at;at=at.parent)out.push(at.node);return out.reverse();}
- function weightedRoute(m,start,target,edgeCost=()=>1,graph=adjacency(m)){
+ function weightedRoute(m,start,target,edgeCost=()=>1,graph=adjacency(m),options={}){
   if(!graph.has(start)||start===target)return null;
   const bridges=new Set((m.bridges||[]).map(b=>b.node)),best=new Map([[start,0]]),heap=[];
   function push(item){heap.push(item);let i=heap.length-1;while(i>0){const p=(i-1)>>1;if(heap[p].cost<=item.cost)break;heap[i]=heap[p];i=p;}heap[i]=item;}
@@ -73,10 +73,11 @@
   push({node:start,parent:null,key:start,cost:0});
   while(heap.length){
    const cur=pop();if(cur.cost!==best.get(cur.key))continue;if(cur.node===target)return reconstruct(cur);
+   const previous=cur.parent?.node??options.previous;
    for(const next of graph.get(cur.node)||[]){
-    if(cur.parent&&next===cur.parent.node)continue;
-    if(bridges.has(cur.node)&&cur.parent){const [px,py]=xy(cur.parent.node),[cx,cy]=xy(cur.node),[nx,ny]=xy(next);if(nx-cx!==cx-px||ny-cy!==cy-py)continue;}
-    const weight=edgeCost(cur.node,next);if(!Number.isFinite(weight)||weight<0)throw Error('道路通行代价必须为非负有限数');
+    if(next===previous||options.blocked?.has(next))continue;
+    if(bridges.has(cur.node)&&previous){const [px,py]=xy(previous),[cx,cy]=xy(cur.node),[nx,ny]=xy(next);if(nx-cx!==cx-px||ny-cy!==cy-py)continue;}
+    const weight=edgeCost(cur.node,next,cur.cost);if(!Number.isFinite(weight)||weight<0)throw Error('道路通行代价必须为非负有限数');
     const key=bridges.has(next)?cur.node+'>'+next:next,cost=cur.cost+weight;
     if(cost<(best.get(key)??Infinity)){best.set(key,cost);push({node:next,parent:cur,key,cost});}
    }

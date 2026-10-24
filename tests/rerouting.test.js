@@ -30,5 +30,13 @@ test('weighted search preserves incoming direction at its starting bridge',()=>{
 test('tiny savings and cooldown do not cause repeated route switching',()=>{
  const m=network(),s=new Simulation(m),car=driver(C.line('1,4','12,4'));s.cars=[car,...jam()];s.step(1/30);assert.equal(car.reroutes,1);const chosen=[...car.path];
  s.cars=[car];car.p=0.55;s.step(1/30);assert.deepEqual(car.path,chosen);assert.equal(car.reroutes,1);
- const fresh=new Simulation(network()),v=driver(C.line('1,4','12,4'));fresh.cars=[v];fresh.step(1/30);assert.equal(v.reroutes||0,0);
+ const fresh=new Simulation(network()),v=driver(C.line('1,4','12,4')),moving=[];
+ for(let x=4;x<=7;x++){moving.push({...driver(C.line(x+',4','12,4'),-1),id:100+x,i:0,p:0.75});if(x<7)moving.push({...driver(C.line(x+',4','12,4'),-1),id:200+x,i:0,p:0.15});}
+ fresh.cars=[v,...moving];assert.ok(fresh.autoRoute(0,'12,4').includes('4,6'),'a slightly faster alternative exists');const original=[...v.path];fresh.step(1/30);assert.deepEqual(v.path,original,'less than two seconds saving is not worth changing');assert.equal(v.reroutes||0,0);
+});
+test('a new tail cannot loop back through an already travelled node',()=>{
+ const m=C.empty();C.draw(m,'1,4','12,4','forward');for(const [a,b] of [['4,4','4,5'],['4,5','2,5'],['2,5','2,3'],['2,3','8,3'],['8,3','8,4']])C.draw(m,a,b,'forward');
+ const cost=(a,b)=>C.xy(a)[1]===4&&C.xy(b)[1]===4&&C.xy(a)[0]>=4&&C.xy(a)[0]<8?20:1,graph=C.adjacency(m);
+ assert.ok(C.weightedRoute(m,'4,4','12,4',cost,graph,{previous:'3,4'}).includes('2,4'));
+ const safe=C.weightedRoute(m,'4,4','12,4',cost,graph,{previous:'3,4',blocked:new Set(['1,4','2,4','3,4'])});assert.ok(!safe.includes('2,4'));assert.ok(C.canFollow(m,[...C.line('1,4','4,4'),...safe.slice(1)]));
 });

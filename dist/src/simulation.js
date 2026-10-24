@@ -3,13 +3,40 @@
  const GAP=0.44,SPEED=1.15,JUNCTION_CLEAR=0.3;
  class Simulation{
   constructor(map,random=Math.random){this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.manual=map.sources.map(s=>(map.routes||[]).some(r=>r.nodes[0]===s.node));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3&&!C.bridgeAt(map,n)));this.reset();}
-  reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.replanAt=this.map.sources.map(()=>0);this.cycleCheckAt=0;this.accumulator=0;}
+  reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.replanAt=this.map.sources.map(()=>0);this.cycleCheckAt=0;this.accumulator=0;this.rerouted=0;this.loadsAt=-Infinity;this.routingLoads=new Map();}
   get average(){return this.arrived?this.totalTravel/this.arrived:0;}
   get waiting(){return this.cars.filter(c=>c.waiting).length;}
   get blockedSources(){return this.map.sources.filter((_,i)=>!this.paths[i].length);}
+  trafficLoads(){
+   if(this.time>=this.loadsAt+0.5){this.routingLoads=new Map();for(const c of this.cars){if(c.done)continue;const k=c.path[c.i]+'>'+c.path[c.i+1];this.routingLoads.set(k,(this.routingLoads.get(k)||0)+1+(c.waiting?3:0));}this.loadsAt=this.time;}
+   return this.routingLoads;
+  }
+  signalWait(node,previous,time){
+   const s=this.map.signals.find(s=>s.node===node);if(!s)return 0;
+   const axis=C.xy(previous)[1]===C.xy(node)[1]?'ew':'ns';if(C.green(s,time,axis))return 0;
+   const period=2*(s.cycle+1),phase=((time+s.offset)%period+period)%period,start=axis==='ew'?0:s.cycle+1;
+   return (start-phase+period)%period;
+  }
+  edgeTime(a,b,time,loads){
+   const moving=(1+0.75*(loads.get(a+'>'+b)||0))/SPEED;
+   return moving+this.signalWait(b,a,time+moving);
+  }
+  pathTime(path,time,loads){let elapsed=0;for(let i=1;i<path.length;i++)elapsed+=this.edgeTime(path[i-1],path[i],time+elapsed,loads);return elapsed;}
   autoRoute(index,target){
-   const loads=new Map();for(const c of this.cars){const k=c.path[c.i]+'>'+c.path[c.i+1];loads.set(k,(loads.get(k)||0)+1+(c.waiting?3:0));}
-   return C.weightedRoute(this.map,this.map.sources[index].node,target,(a,b)=>1+0.75*(loads.get(a+'>'+b)||0),this.graph);
+   const loads=this.trafficLoads(),time=this.time;
+   return C.weightedRoute(this.map,this.map.sources[index].node,target,(a,b,elapsed)=>this.edgeTime(a,b,time+elapsed,loads),this.graph);
+  }
+  replanCar(c){
+   if(!this.map.sources[c.source]||this.manual[c.source]||c.admitted||c.p<0.35||c.p>0.7+1e-8||this.time<(c.nextPlanAt??0))return;
+   const a=c.path[c.i],b=c.path[c.i+1],target=c.path.at(-1);if(b===target||(this.graph.get(b)||[]).length<2)return;
+   const loads=this.trafficLoads();if(c.planNode===b&&c.planSnapshot===this.loadsAt)return;c.planNode=b;c.planSnapshot=this.loadsAt;
+   const arrival=this.time+(1-c.p)/SPEED,time=arrival+this.signalWait(b,a,arrival),blocked=new Set(c.path.slice(0,c.i+1));
+   const next=C.weightedRoute(this.map,b,target,(a,b,elapsed)=>this.edgeTime(a,b,time+elapsed,loads),this.graph,{previous:a,blocked});
+   if(!next)return;
+   const current=c.path.slice(c.i+1),oldTime=this.pathTime(current,time,loads),newTime=this.pathTime(next,time,loads);
+   if(oldTime-newTime>Math.max(2,oldTime*0.15)){
+    c.path=[...c.path.slice(0,c.i+1),...next];c.nextPlanAt=this.time+3;c.reroutes=(c.reroutes||0)+1;this.rerouted++;
+   }
   }
   resolveQueueCycles(){
    const dependencies=new Map();
@@ -36,10 +63,12 @@
   advance(dt){this.accumulator+=Math.max(0,dt);while(this.accumulator>=1/30-1e-9){this.step(1/30);this.accumulator-=1/30;}}
   step(dt){
    this.time+=dt;
+   this.trafficLoads();
    if(this.time>=this.cycleCheckAt){this.resolveQueueCycles();this.cycleCheckAt=this.time+0.5;}
    // Older cars move first, so queues follow leaders without overtaking.
    for(const c of this.cars){
     if(c.done)continue;
+    this.replanCar(c);
     if(c.lock && c.path[c.i]===c.lock && c.p>=JUNCTION_CLEAR){this.locks.delete(c.lock);c.lock=null;}
     const a=c.path[c.i],b=c.path[c.i+1];let max=1;
     for(const o of this.cars)if(o!==c&&!o.done&&o.path[o.i]===a&&o.path[o.i+1]===b&&o.p>c.p)max=Math.min(max,o.p-GAP);
@@ -68,7 +97,7 @@
     if(!this.manual[i]&&this.time>=this.replanAt[i]){this.pending[i]=this.autoRoute(i,this.pending[i].at(-1))||this.pending[i];this.replanAt[i]=this.time+0.5;}
     const path=this.pending[i];
     if(this.cars.some(c=>c.path[c.i]===path[0]&&c.path[c.i+1]===path[1]&&c.p<GAP))continue;
-    this.cars.push({id:this.nextId++,path,i:0,p:0,born:this.time,waiting:false,admitted:false,lock:null,source:i});this.pending[i]=null;this.replanAt[i]=0;this.clocks[i]=60/this.map.demand;
+    this.cars.push({id:this.nextId++,path,i:0,p:0,born:this.time,waiting:false,admitted:false,lock:null,source:i,nextPlanAt:this.time+1,reroutes:0});this.pending[i]=null;this.replanAt[i]=0;this.clocks[i]=60/this.map.demand;
    }
   }
  }

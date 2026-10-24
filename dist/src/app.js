@@ -7,7 +7,7 @@
  hints.bridge='点击十字交叉点建桥，再次点击切换哪条路在上。桥上桥下独立直行，不能在这里转弯。';
  hints.road='拖过已有道路的中间默认跨过、不连接；要接入路口，把它作为一段的端点。可选择新路在上或在下。';
  hints.route='先点入口，再沿道路逐段点击，最后点出口保存。车辆严格沿线行驶；可画多条路线随机分流。Esc 取消。';
- let map=C.empty(),tool='road',drawDir='both',crossingMode='over',routeDraft=[],anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
+ let map=C.empty(),tool='road',drawDir='both',crossingMode='over',routeDraft=[],selectedRoute=null,anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
  try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
  let sim=new Simulation(map),lastTime=0,lastStats=0,pauseReason='';
  const pos=id=>{const [x,y]=C.xy(id);return [40+x*40,40+y*40];};
@@ -26,10 +26,11 @@
   const before=JSON.stringify(map);change();C.cleanup(map);const after=JSON.stringify(map);if(before===after){renderInspector();renderPreview();return;}
   undo.push(before);if(undo.length>60)undo.shift();redo=[];setRunning(false);sim=new Simulation(map);anchor=null;save();render();if(message)toast(message);
  }
- function history(back){const from=back?undo:redo,to=back?redo:undo;if(!from.length)return;to.push(JSON.stringify(map));map=C.validate(JSON.parse(from.pop()));setRunning(false);sim=new Simulation(map);selection=null;anchor=null;routeDraft=[];save();render();toast(back?'已撤销':'已重做');}
+ function history(back){const from=back?undo:redo,to=back?redo:undo;if(!from.length)return;to.push(JSON.stringify(map));map=C.validate(JSON.parse(from.pop()));setRunning(false);sim=new Simulation(map);selection=null;selectedRoute=null;anchor=null;routeDraft=[];save();render();toast(back?'已撤销':'已重做');}
  function switchTool(next){tool=next;anchor=null;hover=null;routeDraft=[];document.querySelectorAll('[data-tool]').forEach(b=>{const active=b.dataset.tool===tool;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});$('tool-hint').textContent=hints[tool];$('road-options').hidden=tool!=='road';$('road-options').style.display=tool==='road'?'':'none';renderPreview();}
  function roadAt(node){return map.roads.find(r=>r.a===node||r.b===node);}
  function inspectNode(node){
+  selectedRoute=null;
   selection=C.bridgeAt(map,node)?{type:'bridge',node}:map.sources.some(s=>s.node===node)?{type:'source',node}:map.signals.some(s=>s.node===node)?{type:'signal',node}:map.exits.includes(node)?{type:'exit',node}:{type:'node',node};renderInspector();renderPreview();
  }
  function activateNode(node){
@@ -38,7 +39,11 @@
    if(node===routeDraft.at(-1))return;
    const candidate=[...routeDraft,...C.line(routeDraft.at(-1),node).slice(1)];
    if(!C.canFollow(map,candidate)){toast('这段走不通：检查道路方向，不能掉头或跨层转弯；可在转角处分段点击');return;}
-   if(map.exits.includes(node)){const start=candidate[0];routeDraft=[];selection={type:'source',node:start};edit(()=>C.addRoute(map,candidate),'行驶路线已保存，车辆严格沿线前进');}
+   if(map.exits.includes(node)){
+    const start=candidate[0],existing=map.routes.findIndex(r=>r.nodes.join('|')===candidate.join('|'));routeDraft=[];selection={type:'source',node:start};
+    if(existing>=0){selectedRoute=existing;renderInspector();renderPreview();toast('这条路线已经存在，可添加不同的途经路线');}
+    else edit(()=>{C.addRoute(map,candidate);selectedRoute=map.routes.length-1;},'路线已保存，可在入口设置中继续添加、预览或删除单条路线');
+   }
    else{routeDraft=candidate;hover=node;renderPreview();}return;
   }
   if(tool==='road'){
@@ -107,7 +112,10 @@
  function renderPreview(){
   let d='';if(anchor){d='<path d="'+path(C.line(anchor,hover||anchor))+'" stroke="#c6f6a4" stroke-width="24" opacity=".35" stroke-linecap="round" fill="none"/><circle cx="'+pos(anchor)[0]+'" cy="'+pos(anchor)[1]+'" r="8" fill="#d4ffb6"/>';}$('draw-preview').innerHTML=d;
   if(routeDraft.length){let points=routeDraft;if(hover&&hover!==points.at(-1))points=[...points,...C.line(points.at(-1),hover).slice(1)];$('draw-preview').innerHTML='<path d="'+path(points)+'" fill="none" stroke="'+(C.canFollow(map,points)?'#e7c486':'#d48d72')+'" stroke-width="5" stroke-dasharray="7 5"/>';}
-  let h='';if(selection?.type==='source'){const s=map.sources.find(s=>s.node===selection.node);if(s)h=C.exitRoutes(map,s.node).map(route=>'<path d="'+path(route)+'" fill="none" stroke="#c8f5a9" stroke-width="3" stroke-dasharray="8 8" opacity=".65"/>').join('');}
+  let h='';if(selection?.type==='source'){
+   const s=map.sources.find(s=>s.node===selection.node),chosen=selectedRoute===null?null:map.routes[selectedRoute];
+   if(s){const routes=chosen?.nodes[0]===s.node?[chosen.nodes]:C.exitRoutes(map,s.node);h=routes.map(route=>'<path d="'+path(route)+'" fill="none" stroke="'+(C.canFollow(map,route)?'#c8f5a9':'#e69c80')+'" stroke-width="'+(chosen?5:3)+'" stroke-dasharray="8 8" opacity=".8"/>').join('');}
+  }
   if(selection?.type==='road'){const r=map.roads.find(r=>C.key(r.a,r.b)===selection.key);if(r)h='<path d="'+path([r.a,r.b])+'" fill="none" stroke="#c8f5a9" stroke-width="32" opacity=".25"/>';}
   $('route-preview').innerHTML=h;
  }
@@ -116,7 +124,12 @@
   if(selection?.type==='bridge'){
    const b=C.bridgeAt(map,selection.node);if(b){type='OVERPASS';html='<h4 class="inspect-title">立交桥<span>↟</span></h4><p class="inspect-sub">坐标 ('+b.node+')<br>桥上桥下各自直行，互不转弯</p><label for="bridge-over">哪条道路从上面跨过？</label><select id="bridge-over"><option value="ew"'+(b.over==='ew'?' selected':'')+'>东西道路在上</option><option value="ns"'+(b.over==='ns'?' selected':'')+'>南北道路在上</option></select><button id="bridge-remove">拆桥 · 恢复平面路口</button>';}
   }else if(selection?.type==='source'){
-   const s=map.sources.find(s=>s.node===selection.node);if(s){type='ENTRY';const routes=C.exitRoutes(map,s.node),plans=map.routes.filter(r=>r.nodes[0]===s.node),count=new Set(routes.map(p=>p.at(-1))).size;html='<h4 class="inspect-title">入口 '+sourceName(s.node)+'<span>↗</span></h4><p class="inspect-sub">坐标 ('+s.node+') · '+count+' 个可达出口</p><p class="inspect-sub">'+(plans.length?'已指定 '+plans.length+' 条路线，车辆严格沿线前进。':'未指定路线：随机选择出口，发车时参考车流使用分流道路。')+(!routes.length?' 路线不通，请检查连接与方向。':'')+'</p><button id="route-start">逐段绘制行驶路线</button>'+(plans.length?'<div class="route-list">'+map.routes.map((r,i)=>r.nodes[0]===s.node?'<button data-remove-route="'+i+'">路线 '+(i+1)+' → '+(map.exits.includes(r.nodes.at(-1))?'出口 '+(map.exits.indexOf(r.nodes.at(-1))+1):'失效出口')+'　×</button>':'').join('')+'</div>':'')+'<p class="inspect-sub">'+(plans.length?'有多条路线时随机分流，不擅自改道':'虚线仅为出口连通示意，不限制其他分流道路')+'</p>';}
+   const s=map.sources.find(s=>s.node===selection.node);
+   if(s){
+    type='ENTRY';const routes=C.exitRoutes(map,s.node),plans=map.routes.map((route,index)=>({route,index})).filter(p=>p.route.nodes[0]===s.node),count=new Set(routes.map(p=>p.at(-1))).size;
+    const list=plans.map(({route,index},number)=>{const exit=map.exits.indexOf(route.nodes.at(-1)),valid=exit>=0&&C.canFollow(map,route.nodes),active=selectedRoute===index;return '<div class="route-item'+(active?' chosen':'')+'" data-route-row="'+index+'"><button class="route-preview-button" data-preview-route="'+index+'" aria-pressed="'+active+'" aria-label="预览路线 '+(number+1)+'"><span>路线 '+(number+1)+' → '+(exit>=0?'出口 '+(exit+1):'失效出口')+'</span><small>'+(route.nodes.length-1)+' 格 · '+(valid?'可用':'路线不通')+'</small></button><button class="route-delete" data-remove-route="'+index+'" aria-label="删除路线 '+(number+1)+'" title="仅删除这条路线">×</button></div>';}).join('');
+    html='<h4 class="inspect-title">入口 '+sourceName(s.node)+'<span>↗</span></h4><p class="inspect-sub">坐标 ('+s.node+') · '+count+' 个可达出口</p><p class="inspect-sub">'+(plans.length?'已指定 '+plans.length+' 条路线，车辆严格沿线前进。':'未指定路线：随机选择出口，途中按拥堵、信号等待和距离避堵。')+(!routes.length?' 路线不通，请检查连接与方向。':'')+'</p><button id="route-start">'+(plans.length?'＋ 添加另一条路线':'＋ 绘制第一条路线')+'</button>'+(plans.length?'<div class="route-list">'+list+'</div><button id="route-show-all"'+(selectedRoute===null?' disabled':'')+'>显示全部路线</button>':'')+'<p class="inspect-sub">'+(plans.length?'点路线单独预览，点 × 只删这一条；可画不同途经点通往同一出口。车辆在候选路线间随机分流。':'虚线仅为出口连通示意，不限制其他分流道路；也可画多条手动候选路线。')+'</p>';
+   }
   }else if(selection?.type==='signal'){
    const s=map.signals.find(s=>s.node===selection.node);if(s){type='SIGNAL';html='<h4 class="inspect-title">路口信号灯<span>●</span></h4><p class="inspect-sub">坐标 ('+s.node+') · 东西 / 南北轮流通行<br>绿灯间隔有 1 秒全红清空路口</p><label for="signal-cycle">每方向绿灯 <output id="cycle-value">'+s.cycle+'</output> 秒</label><input id="signal-cycle" type="range" min="3" max="20" value="'+s.cycle+'"><button id="signal-phase">初相：'+(C.green(s,0,'ew')?'东西绿灯':C.green(s,0,'ns')?'南北绿灯':'全红')+' · 切换</button>';}
   }else if(selection?.type==='road'){
@@ -132,6 +145,7 @@
   const secs=Math.floor(sim.time);$('clock').textContent=String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0');
   const waitingEntries=sim.pending.flatMap((p,i)=>p?['入口 '+String.fromCharCode(65+i)]:[]);
   $('flow-note').textContent=running?(waitingEntries.length?waitingEntries.join('、')+' 正在等前车腾出位置；其他入口按各自道路空位继续发车。':'各入口按设定流量独立发车中。'):(pauseReason|| (sim.time?'模拟已暂停，点击开始模拟继续发车。':''));
+  if(sim.rerouted)$('flow-note').textContent+=' 自动避堵已改道 '+sim.rerouted+' 次。';
  }
  function renderMotion(){
   const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
@@ -141,7 +155,7 @@
    let x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6,under=false,layer='ground';
    const bridge=C.bridgeAt(map,a)||C.bridgeAt(map,b);
    if(bridge){const distance=(bridge.node===a?c.p:1-c.p)*40;if(distance<35){under=axis!==bridge.over;layer=under?'under':'over';}}
-   const car='<g data-segment="'+a+'>'+b+'" data-destination="'+c.path.at(-1)+'" data-layer="'+layer+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';
+   const car='<g data-car-id="'+c.id+'" data-reroutes="'+(c.reroutes||0)+'" data-segment="'+a+'>'+b+'" data-destination="'+c.path.at(-1)+'" data-layer="'+layer+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';
    if(under)below+=car;else above+=car;
   }
   $('under-cars').innerHTML=below;$('cars').innerHTML=above;
@@ -208,8 +222,12 @@
  });
  $('inspector').addEventListener('click',e=>{if(e.target.closest('#signal-phase'))edit(()=>{const s=map.signals.find(s=>s.node===selection.node);s.offset=C.green(s,0,'ew')?s.cycle+1:0;},'信号初始相位已切换');if(e.target.closest('#bridge-remove'))edit(()=>{map.bridges=map.bridges.filter(b=>b.node!==selection.node);selection=null;},'已拆桥，恢复平面路口');});
  $('inspector').addEventListener('click',e=>{
-  if(e.target.closest('#route-start')){const start=selection.node;switchTool('route');routeDraft=[start];hover=start;renderPreview();toast('按行驶顺序逐段点击道路，最后点击出口保存');}
-  const remove=e.target.closest('[data-remove-route]');if(remove)edit(()=>map.routes.splice(Number(remove.dataset.removeRoute),1),'已移除这条指定路线');
+  if(e.target.closest('#route-start')){const start=selection.node;selectedRoute=null;switchTool('route');routeDraft=[start];hover=start;renderPreview();toast('从当前入口按顺序点击途经点，最后点出口；已有路线会保留');return;}
+  const preview=e.target.closest('[data-preview-route]');
+  if(preview){selectedRoute=Number(preview.dataset.previewRoute);switchTool('select');renderInspector();return;}
+  if(e.target.closest('#route-show-all')){selectedRoute=null;switchTool('select');renderInspector();return;}
+  const remove=e.target.closest('[data-remove-route]');
+  if(remove){const index=Number(remove.dataset.removeRoute);if(map.routes[index]?.nodes[0]!==selection?.node)return;edit(()=>{map.routes.splice(index,1);selectedRoute=null;routeDraft=[];},'已删除这一条路线，其余路线保留；可撤销恢复');}
  });
  $('export').addEventListener('click',()=>{
   const text=JSON.stringify(map,null,2),name='路流-交通方案.json';
