@@ -147,6 +147,9 @@
   $('flow-note').textContent=running?(waitingEntries.length?waitingEntries.join('、')+' 正在等前车腾出位置；其他入口按各自道路空位继续发车。':'各入口按设定流量独立发车中。'):(pauseReason|| (sim.time?'模拟已暂停，点击开始模拟继续发车。':''));
   if(sim.rerouted)$('flow-note').textContent+=' 自动避堵已改道 '+sim.rerouted+' 次。';
   if(sim.releasedQueues)$('flow-note').textContent+=' 已协调让行疏通 '+sim.releasedQueues+' 次。';
+  if(sim.reversed)$('flow-note').textContent+=' 已后退让行 '+sim.reversed+' 次。';
+  $('reverse-yield').disabled=!sim.cars.length||Boolean(sim.reverseCar);
+  $('reverse-yield').textContent=sim.reverseCar?'↶ 正在后退…':'↶ 后退让行';
  }
  function renderMotion(){
   const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
@@ -156,7 +159,7 @@
    let x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6,under=false,layer='ground';
    const bridge=C.bridgeAt(map,a)||C.bridgeAt(map,b);
    if(bridge){const distance=(bridge.node===a?c.p:1-c.p)*40;if(distance<35){under=axis!==bridge.over;layer=under?'under':'over';}}
-   const car='<g data-car-id="'+c.id+'" data-reroutes="'+(c.reroutes||0)+'" data-segment="'+a+'>'+b+'" data-destination="'+c.path.at(-1)+'" data-layer="'+layer+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="#1c342b" stroke-width=".7"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/></g>';
+   const car='<g data-car-id="'+c.id+'" data-motion="'+(c.reversing?'reverse':sim.time<(c.holdUntil||0)?'yielding':'forward')+'" data-progress="'+c.p+'" data-reroutes="'+(c.reroutes||0)+'" data-segment="'+a+'>'+b+'" data-destination="'+c.path.at(-1)+'" data-layer="'+layer+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><title>'+(c.reversing?'后退让行':sim.time<(c.holdUntil||0)?'等待其它车辆先行':'车辆行驶中')+'</title><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="'+(c.reversing?'#ffd799':'#1c342b')+'" stroke-width="'+(c.reversing?'1.6':'.7')+'"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/>'+(c.reversing?'<path d="M-6 -2v1M-6 1v1" stroke="#fff7db" stroke-width="2"/>':'')+'</g>';
    if(under)below+=car;else above+=car;
   }
   $('under-cars').innerHTML=below;$('cars').innerHTML=above;
@@ -193,6 +196,7 @@
  $('draw-crossing').addEventListener('change',e=>crossingMode=e.target.value);
  $('run').addEventListener('click',()=>{if(!running&&(!map.sources.length||!map.exits.length||sim.blockedSources.length===map.sources.length)){toast('请先连接道路，并设置有可达路线的入口和出口');return;}anchor=null;renderPreview();setRunning(!running);});
  $('reset').addEventListener('click',()=>{setRunning(false);sim.reset();renderMotion();renderStats();toast('模拟已重置，路网设计保留');});
+ $('reverse-yield').addEventListener('click',()=>{const c=sim.requestReverse(true);if(!c){toast('暂无可安全后退的待行车辆：请先等后方腾出空间');return;}renderMotion();renderStats();toast(running?'车辆正在沿原路慢速后退，让出空间':'已安排后退让行，点击开始模拟继续');});
  $('undo').addEventListener('click',()=>history(true));$('redo').addEventListener('click',()=>history(false));$('save').addEventListener('click',()=>save(true));
  $('new-map').addEventListener('click',()=>{selection=null;anchor=null;hover=null;switchTool('road');edit(()=>{map=C.empty();},'空白地图已就绪，可撤销恢复上一个方案');});
  function examplePreview(m){
