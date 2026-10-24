@@ -3,7 +3,7 @@
  const GAP=0.44,SPEED=1.15,JUNCTION_CLEAR=0.3;
  class Simulation{
   constructor(map,random=Math.random){this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.manual=map.sources.map(s=>(map.routes||[]).some(r=>r.nodes[0]===s.node));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3&&!C.bridgeAt(map,n)));this.reset();}
-  reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.replanAt=this.map.sources.map(()=>0);this.cycleCheckAt=0;this.accumulator=0;this.rerouted=0;this.loadsAt=-Infinity;this.routingLoads=new Map();}
+  reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.replanAt=this.map.sources.map(()=>0);this.cycleCheckAt=0;this.accumulator=0;this.rerouted=0;this.releasedQueues=0;this.loadsAt=-Infinity;this.routingLoads=new Map();}
   get average(){return this.arrived?this.totalTravel/this.arrived:0;}
   get waiting(){return this.cars.filter(c=>c.waiting).length;}
   get blockedSources(){return this.map.sources.filter((_,i)=>!this.paths[i].length);}
@@ -39,23 +39,38 @@
    }
   }
   resolveQueueCycles(){
-   const dependencies=new Map();
+   const dependencies=new Map(),heads=new Set(),clearers=new Map(),blockers=new Map(),lanes=new Map(),byId=new Map();
+   for(const c of this.cars){if(c.done)continue;const key=c.path[c.i]+'>'+c.path[c.i+1];if(!lanes.has(key))lanes.set(key,[]);lanes.get(key).push(c);byId.set(c.id,c);}
+   for(const cars of lanes.values())cars.sort((a,b)=>a.p-b.p);
    for(const c of this.cars){
-    if(!c.waiting||c.admitted||c.p<0.7-1e-8||c.path[c.i+2]===undefined)continue;
+    if(!c.waiting||c.done||c.admitted)continue;
+    const ahead=lanes.get(c.path[c.i]+'>'+c.path[c.i+1]).find(o=>o.p>c.p);
+    if(ahead){if(ahead.waiting&&ahead.p-c.p<=GAP+1e-8)dependencies.set(c,ahead);continue;}
+    if(c.p<0.7-1e-8||c.path[c.i+2]===undefined)continue;
     const a=c.path[c.i],b=c.path[c.i+1],next=c.path[c.i+2],light=this.map.signals.find(s=>s.node===b),axis=C.xy(a)[1]===C.xy(b)[1]?'ew':'ns';
-    if(light&&!C.green(light,this.time,axis)||this.locks.has(b)&&this.locks.get(b)!==c.id)continue;
-    const occupied=this.cars.filter(o=>o!==c&&o.path[o.i]===b&&o.path[o.i+1]===next);
-    if(occupied.length===1&&occupied[0].waiting&&!occupied[0].admitted&&occupied[0].p>=0.7-1e-8)dependencies.set(c,occupied[0]);
+    if(light&&!C.green(light,this.time,axis))continue;
+    const tail=lanes.get(b+'>'+next)?.[0];
+    if(tail&&1+tail.p-c.p<GAP-1e-8)continue;
+    const ownerId=this.locks.get(b),owner=ownerId!==undefined&&ownerId!==c.id?byId.get(ownerId):null;
+    // Only hand off a lock from a vehicle already leaving this junction.
+    if(owner&&(owner.path[owner.i]!==b||!owner.waiting||owner.admitted))continue;
+    const needs=[];if(owner)needs.push(owner);
+    if(tail&&tail.p<GAP+JUNCTION_CLEAR+SPEED/30&&!needs.includes(tail))needs.push(tail);
+    if(!needs.length||needs.some(o=>!o.waiting||o.admitted))continue;
+    dependencies.set(c,needs[0]);blockers.set(c,needs);heads.add(c);if(owner)clearers.set(c,owner);
    }
    const examined=new Set();
    for(const start of dependencies.keys()){
     const chain=[],index=new Map();let cur=start;
     while(dependencies.has(cur)&&!index.has(cur)&&!examined.has(cur)){index.set(cur,chain.length);chain.push(cur);cur=dependencies.get(cur);}
     if(index.has(cur)){
-     const cycle=chain.slice(index.get(cur)),nodes=cycle.map(c=>c.path[c.i+1]);
-     // Distinct green, unlocked junctions and one car per outgoing segment give
-     // the entire cycle enough room to move as a platoon without crossing.
-     if(cycle.length>1&&new Set(nodes).size===cycle.length&&cycle.every(c=>!this.locks.has(c.path[c.i+1])||this.locks.get(c.path[c.i+1])===c.id))for(const c of cycle){const b=c.path[c.i+1];c.admitted=true;if(this.junctions.has(b)){this.locks.set(b,c.id);c.lock=b;}}
+     const cycle=chain.slice(index.get(cur)),fronts=cycle.filter(c=>heads.has(c)),nodes=fronts.map(c=>c.path[c.i+1]);
+     // Reserve distinct movements together; followers create space in turn.
+     // The cross-segment gap check in step() remains active after reservation.
+     if(fronts.length>1&&new Set(nodes).size===fronts.length&&fronts.every(c=>blockers.get(c).every(o=>cycle.includes(o)))){
+      for(const c of fronts){const b=c.path[c.i+1],owner=clearers.get(c);c.admitted=true;if(owner){owner.lock=null;c.clearing=owner;}if(this.junctions.has(b)){this.locks.set(b,c.id);c.lock=b;}}
+      this.releasedQueues++;
+     }
     }
     chain.forEach(c=>examined.add(c));
    }
@@ -71,7 +86,12 @@
     this.replanCar(c);
     if(c.lock && c.path[c.i]===c.lock && c.p>=JUNCTION_CLEAR){this.locks.delete(c.lock);c.lock=null;}
     const a=c.path[c.i],b=c.path[c.i+1];let max=1;
-    for(const o of this.cars)if(o!==c&&!o.done&&o.path[o.i]===a&&o.path[o.i+1]===b&&o.p>c.p)max=Math.min(max,o.p-GAP);
+    // Keep following distance across the node, including coordinated queues.
+    const outgoing=c.path[c.i+2];
+    for(const o of this.cars){if(o===c||o.done)continue;if(o.path[o.i]===a&&o.path[o.i+1]===b&&o.p>c.p)max=Math.min(max,o.p-GAP);else if(outgoing&&o.path[o.i]===b&&o.path[o.i+1]===outgoing)max=Math.min(max,1+o.p-GAP);}
+    // A handed-off reservation never lets the next movement reach the node
+    // until the old owner has physically cleared it, even if that owner stops.
+    if(c.clearing){if(c.clearing.done||c.clearing.path[c.clearing.i]!==b||c.clearing.p>=JUNCTION_CLEAR)c.clearing=null;else max=Math.min(max,1+c.clearing.p-GAP);}
     let next=c.p+SPEED*dt;
     if(!c.admitted && next>=0.7){
      const light=this.map.signals.find(s=>s.node===b);const axis=C.xy(a)[1]===C.xy(b)[1]?'ew':'ns';
@@ -97,6 +117,8 @@
     if(!this.manual[i]&&this.time>=this.replanAt[i]){this.pending[i]=this.autoRoute(i,this.pending[i].at(-1))||this.pending[i];this.replanAt[i]=this.time+0.5;}
     const path=this.pending[i];
     if(this.cars.some(c=>c.path[c.i]===path[0]&&c.path[c.i+1]===path[1]&&c.p<GAP))continue;
+    // An entrance is a merge: give an already reserved through car its space.
+    if(this.cars.some(c=>(c.admitted||c.p>1-GAP)&&c.path[c.i+1]===path[0]&&c.path[c.i+2]===path[1]))continue;
     this.cars.push({id:this.nextId++,path,i:0,p:0,born:this.time,waiting:false,admitted:false,lock:null,source:i,nextPlanAt:this.time+1,reroutes:0});this.pending[i]=null;this.replanAt[i]=0;this.clocks[i]=60/this.map.demand;
    }
   }

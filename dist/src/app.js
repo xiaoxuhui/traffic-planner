@@ -146,6 +146,7 @@
   const waitingEntries=sim.pending.flatMap((p,i)=>p?['入口 '+String.fromCharCode(65+i)]:[]);
   $('flow-note').textContent=running?(waitingEntries.length?waitingEntries.join('、')+' 正在等前车腾出位置；其他入口按各自道路空位继续发车。':'各入口按设定流量独立发车中。'):(pauseReason|| (sim.time?'模拟已暂停，点击开始模拟继续发车。':''));
   if(sim.rerouted)$('flow-note').textContent+=' 自动避堵已改道 '+sim.rerouted+' 次。';
+  if(sim.releasedQueues)$('flow-note').textContent+=' 已协调让行疏通 '+sim.releasedQueues+' 次。';
  }
  function renderMotion(){
   const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
