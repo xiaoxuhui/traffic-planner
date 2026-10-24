@@ -45,6 +45,8 @@
     "R03 mobile preview and single deletion work; deleting last entry route returns only that entry to automatic routing",
     "R04 automatic cars reroute while driving and the visible count confirms it",
     "I29 new automatic traffic actually uses the previously ignored bypass",
+    "R05 four high-demand manual entries recover from multi-car gridlock and keep arriving with visible coordinated yielding",
+    "R06 coordinated yielding status remains readable on mobile",
     "H01 offline hall-shaped subpath loads all relative assets and exports exact JSON through native bridge",
     "H02 rejected native export shows an error and map edits preserve unrelated storage",
     "I18 no browser errors"
