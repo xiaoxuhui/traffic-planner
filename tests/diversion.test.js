@@ -5,12 +5,14 @@ test('weighted routing can use a longer connected bypass instead of a loaded sho
  const m=parallel();const p=C.weightedRoute(m,'1,1','8,1',(a,b)=>C.xy(a)[1]===1&&C.xy(b)[1]===1&&C.xy(a)[0]>=3&&C.xy(a)[0]<6?15:1);assert.ok(p.includes('3,4'));assert.ok(C.canFollow(m,p));
 });
 test('new automatic vehicles use the available diversion under congestion',()=>{
- const m=parallel();m.signals=[{node:'6,1',cycle:6,offset:7}];const s=new Simulation(m,()=>0);s.cars=traffic();s.step(1/30);const car=s.cars.find(c=>c.source===0);assert.ok(car);assert.ok(car.path.includes('3,4'));
+ const m=parallel();m.signals=[{node:'6,1',cycle:6,offset:7}];const s=new Simulation(m,()=>0);s.cars=traffic();
+ // Keep the bypass faster even after accounting for its signal phase at the merge.
+ s.cars.push({...traffic()[1],id:30,p:0.1});s.step(1/30);const car=s.cars.find(c=>c.source===0);assert.ok(car);assert.ok(car.path.includes('3,4'));
 });
 test('explicit instructions remain exact even when an automatic detour is less loaded',()=>{
  const m=parallel(),p=C.line('1,1','8,1');C.addRoute(m,p);m.signals=[{node:'6,1',cycle:6,offset:7}];const s=new Simulation(m,()=>0);s.cars=traffic();s.step(1/30);assert.deepEqual(s.cars.find(c=>c.source===0).path,p);
 });
-test('vehicles already on the road never change their selected path',()=>{
+test('cars keep their current segment and prefix before reaching a rerouting decision point',()=>{
  const m=parallel(),s=new Simulation(m,()=>0);s.advance(0.1);const car=s.cars[0],before=[...car.path];s.cars.push(...traffic());s.advance(0.2);assert.deepEqual(car.path,before);
 });
 test('weighted paths still respect one-way restrictions and overpass separation',()=>{
