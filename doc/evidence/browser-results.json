@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-24",
+  "date": "2026-10-24T21:03:44.345Z",
   "browser": "151.0.7922.34",
   "checks": [
     "I00 fresh session starts with an unobstructed blank grid",
@@ -47,6 +47,8 @@
     "I29 new automatic traffic actually uses the previously ignored bypass",
     "R05 four high-demand manual entries recover from multi-car gridlock and keep arriving with visible coordinated yielding",
     "R06 coordinated yielding status remains readable on mobile",
+    "R07 manual reverse visibly decreases vehicle position, shows backing state and preserves paused layout",
+    "R08 mobile reverse control fits; after yielding car resumes its exact saved route and reset clears backing state",
     "H01 offline hall-shaped subpath loads all relative assets and exports exact JSON through native bridge",
     "H02 rejected native export shows an error and map edits preserve unrelated storage",
     "I18 no browser errors"
