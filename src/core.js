@@ -7,7 +7,10 @@
  function node(x,y,z=0){const n=x+','+y+(z?'@'+z:'');if(!Number.isInteger(z)||!valid(n))throw Error('道路坐标或高度超出范围');return n;}
  const adjacent=(a,b)=>{const [x,y]=xy(a),[u,v]=xy(b);return Math.abs(x-u)+Math.abs(y-v)===1&&Math.abs(level(a)-level(b))<=1;};
  const key=(a,b)=>a<b?a+'|'+b:b+'|'+a;
- const empty=()=>({version:1,roads:[],sources:[],exits:[],signals:[],bridges:[],routes:[],demand:18});
+ function empty(mode='road'){const m={version:1,roads:[],sources:[],exits:[],signals:[],bridges:[],routes:[],demand:18};if(mode==='metro')Object.assign(m,{mode:'metro',stations:[],trainCars:6});return m;}
+ function syncStations(m){m.sources=m.stations.map(node=>({node,target:''}));m.exits=[...m.stations];}
+ function addStation(m,node){if(m.mode!=='metro'||!nodes(m).includes(node)||bridgeAt(m,node))throw Error('请在轨道节点上放置站台，避开旧式跨线点');if(!m.stations.includes(node))m.stations.push(node);syncStations(m);return m;}
+ function removeStation(m,node){m.stations=m.stations.filter(n=>n!==node);syncStations(m);cleanup(m);}
  function line(a,b){
   if(!valid(a)||!valid(b))throw Error('道路坐标超出地图');
   if(level(a)!==level(b))throw Error('不同高度请使用坡道连接');
@@ -114,7 +117,7 @@
  }
  function cleanup(m){
   const alive=new Set(nodes(m));m.exits=m.exits.filter(n=>alive.has(n));
-  m.sources=m.sources.filter(s=>alive.has(s.node)&&!m.exits.includes(s.node));
+  if(m.mode==='metro'){m.stations=m.stations.filter(n=>alive.has(n));syncStations(m);}else m.sources=m.sources.filter(s=>alive.has(s.node)&&!m.exits.includes(s.node));
   for(const s of m.sources)s.target='';
   m.signals=m.signals.filter(s=>alive.has(s.node));
   m.bridges=(m.bridges||[]).filter(b=>neighbors(m,b.node,false).length===4);
@@ -129,7 +132,8 @@
   const fail=()=>{throw Error('方案格式无效：请导入路流导出的 JSON 文件');};
   if(!v||v.version!==1||!Array.isArray(v.roads)||!Array.isArray(v.sources)||!Array.isArray(v.exits)||!Array.isArray(v.signals))fail();
   if(v.roads.length>808*17||v.sources.length>425||v.exits.length>425||v.signals.length>425||!Number.isFinite(v.demand)||v.demand<2||v.demand>60)fail();
-  const m=empty(),seen=new Set();
+  if(v.mode!==undefined&&!['road','metro'].includes(v.mode))fail();
+  const m=empty(v.mode),seen=new Set();
   for(const r of v.roads){
    if(!r||!valid(r.a)||!valid(r.b)||!['both','forward','reverse'].includes(r.dir)||seen.has(key(r.a,r.b)))fail();
    if(!adjacent(r.a,r.b))fail();
@@ -138,7 +142,11 @@
   const alive=new Set(nodes(m));const unique=(arr)=>new Set(arr).size===arr.length;
   if(!unique(v.exits)||!v.exits.every(n=>alive.has(n)))fail();m.exits=[...v.exits];
   if(!unique(v.sources.map(s=>s?.node))||!unique(v.signals.map(s=>s?.node)))fail();
-  for(const s of v.sources){if(!s||!alive.has(s.node)||m.exits.includes(s.node)||typeof s.target!=='string'||s.target!==''&&!m.exits.includes(s.target))fail();m.sources.push({node:s.node,target:''});}
+  for(const s of v.sources){if(!s||!alive.has(s.node)||m.mode!=='metro'&&m.exits.includes(s.node)||typeof s.target!=='string'||s.target!==''&&!m.exits.includes(s.target))fail();m.sources.push({node:s.node,target:''});}
+  if(m.mode==='metro'){
+   if(!Array.isArray(v.stations)||v.stations.length>425||!unique(v.stations)||!v.stations.every(n=>alive.has(n))||!Number.isInteger(v.trainCars??6)||(v.trainCars??6)<1||(v.trainCars??6)>12)fail();
+   m.stations=[...v.stations];m.trainCars=v.trainCars??6;if(m.sources.length!==m.stations.length||m.exits.length!==m.stations.length||m.stations.some(n=>!m.exits.includes(n)||!m.sources.some(s=>s.node===n)))fail();syncStations(m);
+  }
   for(const s of v.signals){if(!s||!alive.has(s.node)||!Number.isFinite(s.cycle)||s.cycle<3||s.cycle>20||!Number.isFinite(s.offset)||s.offset<0||s.offset>42)fail();m.signals.push({node:s.node,cycle:s.cycle,offset:s.offset});}
   const bridges=v.bridges===undefined?[]:v.bridges;if(!Array.isArray(bridges)||bridges.length>425||!unique(bridges.map(b=>b?.node)))fail();
   for(const b of bridges){if(!b||!valid(b.node)||!['ew','ns'].includes(b.over)||neighbors(m,b.node,false).length!==4||neighbors(m,b.node,false).some(n=>level(n)!==level(b.node))||m.exits.includes(b.node)||m.sources.some(s=>s.node===b.node)||m.signals.some(s=>s.node===b.node))fail();m.bridges.push({node:b.node,over:b.over});}
@@ -153,5 +161,5 @@
   m.sources=[{node:'1,8',target:''},{node:'12,1',target:''},{node:'5,12',target:''}];
   m.exits=['23,8','12,15','19,4'];m.signals=[{node:'12,8',cycle:6,offset:0},{node:'5,8',cycle:6,offset:3},{node:'19,8',cycle:6,offset:7}];return m;
  }
- return {COLS,ROWS,MIN_LEVEL,MAX_LEVEL,xy,level,node,valid,key,empty,line,draw,ramp,setDirection,nodes,neighbors,adjacency,route,weightedRoute,exitRoutes,canFollow,addRoute,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
+ return {COLS,ROWS,MIN_LEVEL,MAX_LEVEL,xy,level,node,valid,key,empty,line,draw,ramp,setDirection,nodes,neighbors,adjacency,route,weightedRoute,exitRoutes,canFollow,addRoute,addStation,removeStation,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
 });
