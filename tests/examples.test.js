@@ -25,3 +25,6 @@ test('cloverleaf left-turn routes go past the bridge before using a loop ramp',(
  const m=E.create('cloverleaf');const westToNorth=m.routes.find(r=>r.nodes[0]==='2,8'&&r.nodes.at(-1)==='12,1').nodes;
  assert.ok(westToNorth.indexOf('12,8')<westToNorth.indexOf('17,8'));assert.ok(westToNorth.includes('17,12'));
 });
+for(const item of E.metroCatalog)test(item.id+': metro example has the fixed fleet, valid return lines and every station served',()=>{
+ const m=E.createMetro(item.id),s=new Simulation(m);assert.equal(s.trainCount,Math.floor(m.stations.length/3));assert.equal(s.issues.length,0);assert.equal(m.trainCars,6);s.advance(120);for(const n of m.stations)assert.ok(s.destinations[n]>0,n+' never served');
+});

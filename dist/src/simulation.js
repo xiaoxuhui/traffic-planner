@@ -1,8 +1,8 @@
-(function(root,factory){const api=factory(typeof module==='object'?require('./core.js'):root.TrafficCore,typeof module==='object'?require('./reversing.js'):root.TrafficReversing);if(typeof module==='object')module.exports=api;else root.TrafficSim=api;})(typeof globalThis!=='undefined'?globalThis:this,function(C,R){
+(function(root,factory){const api=factory(typeof module==='object'?require('./core.js'):root.TrafficCore,typeof module==='object'?require('./reversing.js'):root.TrafficReversing,typeof module==='object'?require('./metro-simulation.js'):root.TrafficMetro);if(typeof module==='object')module.exports=api;else root.TrafficSim=api;})(typeof globalThis!=='undefined'?globalThis:this,function(C,R,M){
  'use strict';
  const GAP=R.GAP,SPEED=1.15,JUNCTION_CLEAR=R.CLEAR;
  class Simulation{
-  constructor(map,random=Math.random){this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.manual=map.sources.map(s=>(map.routes||[]).some(r=>r.nodes[0]===s.node));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3&&!C.bridgeAt(map,n)));this.reset();}
+  constructor(map,random=Math.random){if(map.mode==='metro')return new M.MetroSimulation(map);this.map=map;this.random=random;this.graph=C.adjacency(map);this.paths=map.sources.map(s=>C.exitRoutes(map,s.node,this.graph));this.manual=map.sources.map(s=>(map.routes||[]).some(r=>r.nodes[0]===s.node));this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3&&!C.bridgeAt(map,n)));this.reset();}
   reset(){this.cars=[];this.time=0;this.arrived=0;this.totalTravel=0;this.nextId=1;this.destinations={};this.locks=new Map();this.clocks=this.map.sources.map((_,i)=>i*0.6);this.pending=this.map.sources.map(()=>null);this.replanAt=this.map.sources.map(()=>0);this.cycleCheckAt=0;this.accumulator=0;this.rerouted=0;this.releasedQueues=0;this.reversed=0;this.reverseCar=null;this.loadsAt=-Infinity;this.routingLoads=new Map();}
   requestReverse(force=false,id=null){return R.request(this,force,id);}
   get average(){return this.arrived?this.totalTravel/this.arrived:0;}

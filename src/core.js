@@ -20,6 +20,13 @@
   return out;
  }
  function setDirection(r,dir){if(!['both','forward','reverse'].includes(dir))throw Error('无效道路方向');r.dir=dir;}
+ function drawingLevel(m,a,b,crossing='connect'){
+  const z=level(a);if(crossing==='connect'||bridgeAt(m,a)||bridgeAt(m,b))return z;
+  const points=line(a,b),keys=new Set(points.slice(1).map((n,i)=>key(node(...xy(points[i])),node(...xy(n))))),overlap=m.roads.filter(r=>keys.has(key(node(...xy(r.a)),node(...xy(r.b)))));
+  if(!overlap.some(r=>level(r.a)===z&&level(r.b)===z))return z;
+  const next=crossing==='under'?Math.min(z,...overlap.flatMap(r=>[level(r.a),level(r.b)]))-1:Math.max(z,...overlap.flatMap(r=>[level(r.a),level(r.b)]))+1;
+  if(next<MIN_LEVEL||next>MAX_LEVEL)throw Error('已到可编辑高度边界，请选择其它高度');return next;
+ }
  function putRoad(m,a,b,dir){if(a>b){[a,b]=[b,a];dir=dir==='both'?'both':dir==='forward'?'reverse':'forward';}const old=m.roads.find(r=>key(r.a,r.b)===key(a,b));if(old)old.dir=dir;else m.roads.push({a,b,dir});}
  function ramp(m,a,b,dir='both'){
   if(!valid(a)||!valid(b)||Math.abs(level(a)-level(b))!==1||!['both','forward','reverse'].includes(dir))throw Error('坡道需要连接相邻的两个高度');
@@ -161,5 +168,5 @@
   m.sources=[{node:'1,8',target:''},{node:'12,1',target:''},{node:'5,12',target:''}];
   m.exits=['23,8','12,15','19,4'];m.signals=[{node:'12,8',cycle:6,offset:0},{node:'5,8',cycle:6,offset:3},{node:'19,8',cycle:6,offset:7}];return m;
  }
- return {COLS,ROWS,MIN_LEVEL,MAX_LEVEL,xy,level,node,valid,key,empty,line,draw,ramp,setDirection,nodes,neighbors,adjacency,route,weightedRoute,exitRoutes,canFollow,addRoute,addStation,removeStation,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
+ return {COLS,ROWS,MIN_LEVEL,MAX_LEVEL,xy,level,node,valid,key,empty,line,draw,ramp,drawingLevel,setDirection,nodes,neighbors,adjacency,route,weightedRoute,exitRoutes,canFollow,addRoute,addStation,removeStation,bridgeAt,setBridge,cleanup,eraseNode,green,validate,demo};
 });

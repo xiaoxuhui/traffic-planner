@@ -43,5 +43,10 @@
   {id:'ring',name:'单向环形分流',tag:'环路 · 顺向汇入',description:'四个方向接入单向环路，沿同一方向绕行至各出口。',factory:ring}
  ];
  function create(id){const item=catalog.find(e=>e.id===id);if(!item)throw Error('未找到这个示例');return C.validate(item.factory());}
- return {catalog:catalog.map(({factory,...info})=>Object.freeze(info)),create};
+ const metroCatalog=[{id:'metro-line',name:'六站往返线',tag:'地铁 · 六节编组',description:'六座站台配置两列车，逐站停靠，两个终点自动折返。'},{id:'metro-layers',name:'双层地铁跨线',tag:'地铁 · 独立高度',description:'地面与高架各一条六站线，十二站配置四列车，上下层互不转入。'}];
+ function createMetro(id){
+  if(!metroCatalog.some(e=>e.id===id))throw Error('未找到这个地铁示例');const m=C.empty('metro');C.draw(m,'1,8','23,8');for(const x of [1,5,9,13,18,23])C.addStation(m,C.node(x,8));C.addRoute(m,C.line('1,8','23,8'));
+  if(id==='metro-layers'){C.draw(m,'12,1@1','12,15@1');for(const y of [1,4,7,10,13,15])C.addStation(m,C.node(12,y,1));C.addRoute(m,C.line('12,1@1','12,15@1'));}return C.validate(m);
+ }
+ return {catalog:catalog.map(({factory,...info})=>Object.freeze(info)),create,metroCatalog,createMetro};
 });

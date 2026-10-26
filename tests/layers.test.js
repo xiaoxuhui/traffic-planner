@@ -24,3 +24,6 @@ test('cars on three coincident layers reach only their own layer exit',()=>{
  const m=C.empty();for(const z of [0,1,2]){C.draw(m,C.node(2,8,z),C.node(12,8,z));m.sources.push({node:C.node(2,8,z),target:''});m.exits.push(C.node(12,8,z));}
  const s=new Simulation(m,()=>0);s.advance(30);for(const n of m.exits)assert.ok(s.destinations[n]>0);assert.equal(s.locks.size,0);
 });
+test('drawing over a parallel existing road selects one height for the whole new stroke',()=>{
+ const m=C.empty();C.draw(m,'2,8','12,8','forward');assert.equal(C.drawingLevel(m,'2,8','16,8','over'),1);C.draw(m,'2,8@1','16,8@1','forward');assert.equal(C.drawingLevel(m,'2,8','16,8','over'),2);assert.equal(C.drawingLevel(m,'2,8@2','16,8@2','over'),2);assert.equal(C.drawingLevel(m,'2,8','16,8','under'),-1);assert.equal(C.drawingLevel(m,'2,8','16,8','connect'),0);
+});

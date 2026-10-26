@@ -1,22 +1,38 @@
 /* Road editing and UI coordination. All graph and driving rules live in core/simulation. */
 (function(){
  'use strict';
- const C=window.TrafficCore,{Simulation}=window.TrafficSim,$=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
- const STORE='flow-traffic-layout-v1', tools=['select','road','direction','signal','source','exit','erase','bridge','route'];
+ const C=window.TrafficCore,L=window.TrafficLayers,{Simulation}=window.TrafficSim,$=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
+ const STORE='flow-traffic-layout-v1',METRO_STORE='flow-metro-layout-v1',MODE_STORE='flow-active-mode-v1',tools=['select','road','direction','signal','source','exit','erase','bridge','route'];
  const hints={select:'点击入口查看随机分流路线；点击道路或红绿灯，调整它的设置。',road:'拖动绘制道路，或依次点击起点与终点。交叉处自动连接。',direction:'点击道路中间，依次切换正向、反向、双向通行。箭头即行驶方向。',signal:'点击道路节点添加红绿灯；选择灯后可调整绿灯时长与初始相位。',source:'点击道路节点设置入口。每辆车出发时，会从所有可达出口里随机选一个。',exit:'点击道路节点设置出口。车辆会随机选择能到达的出口。',erase:'点击路段拆路；点击节点优先拆除入口、出口或灯，再拆除相连道路。'};
  hints.bridge='点击十字交叉点建桥，再次点击切换哪条路在上。桥上桥下独立直行，不能在这里转弯。';
  hints.road='拖过已有道路的中间默认跨过、不连接；要接入路口，把它作为一段的端点。可选择新路在上或在下。';
  hints.route='先点入口，再沿道路逐段点击，最后点出口保存。车辆严格沿线行驶；可画多条路线随机分流。Esc 取消。';
- let map=C.empty(),tool='road',drawDir='both',crossingMode='over',routeDraft=[],selectedRoute=null,anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null;
- try{const saved=localStorage.getItem(STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
+ hints.ramp='先点坡道起点，切换到相邻高度，再点击终点。坡道是不同高度之间的明确连接。';
+ let map=C.empty(),tool='road',drawDir='both',crossingMode='over',routeDraft=[],selectedRoute=null,anchor=null,hover=null,selection=null,running=false,speed=1,showGrid=true,undo=[],redo=[],toastTimer,keyboardNode='12,8',pointerStart=null,buildLevel=0,onlyLevel=false;
+ try{const mode=localStorage.getItem(MODE_STORE)==='metro'?'metro':'road';map=C.empty(mode);const saved=localStorage.getItem(mode==='metro'?METRO_STORE:STORE);if(saved)map=C.validate(JSON.parse(saved));}catch{setTimeout(()=>toast('未能读取本地方案，已打开空白地图'),100);}
  let sim=new Simulation(map),lastTime=0,lastStats=0,pauseReason='';
- const pos=id=>{const [x,y]=C.xy(id);return [40+x*40,40+y*40];};
- const path=ids=>ids.map((id,i)=>(i?'L':'M')+pos(id).join(',')).join(' ');
+ const pos=L.pos;
+ const path=L.path;
  const sourceName=node=>String.fromCharCode(65+map.sources.findIndex(s=>s.node===node));
  const exitName=node=>'出口 '+(map.exits.indexOf(node)+1)+' · ('+node+')';
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const isMetro=()=>map.mode==='metro';
+ function toolHint(){if(tool==='ramp')return anchor?'起点在'+L.levelName(C.level(anchor))+'，请切到相邻高度后点击终点。':hints.ramp;if(isMetro())return ({road:'在当前高度绘制双向轨道；同层连接，跨层通过坡道接通。',source:'点击轨道节点放置站台。站台同时收发列车，每三座站台配置一列车。',exit:'点击轨道节点放置站台，站台同时作为入口和出口。',route:'先选起始站台，按顺序点途经节点和站台，最后点「完成线路」。途中站台不会提前结束绘制。',select:'点击站台查看线路，列车沿手画线逐站停靠并在终点折返。'})[tool]||hints[tool];return hints[tool];}
+ function changeMode(mode){
+  if((isMetro()?'metro':'road')===mode)return;save();setRunning(false);let next=C.empty(mode);try{const saved=localStorage.getItem(mode==='metro'?METRO_STORE:STORE);if(saved)next=C.validate(JSON.parse(saved));}catch{toast('该工作台存档不可用，已打开空图');}
+  map=next;sim=new Simulation(map);undo=[];redo=[];selection=null;selectedRoute=null;routeDraft=[];buildLevel=0;onlyLevel=false;keyboardNode='12,8';drawDir='both';crossingMode=mode==='metro'?'connect':'over';switchTool('road');save();render();toast(mode==='metro'?'地铁工作台：站台同时收发列车，默认六节编组':'已回到道路工作台，原设计已恢复');
+ }
+ function changeLevel(z){if(!Number.isInteger(z)||z<C.MIN_LEVEL||z>C.MAX_LEVEL)return;buildLevel=z;keyboardNode=C.node(...C.xy(keyboardNode),z);if(tool!=='ramp'&&tool!=='route')anchor=null;hover=null;if(tool!=='route')selection=null;$('build-level').value=String(z);$('grid').setAttribute('transform','translate('+(z*3)+' '+(-z*4)+')');$('tool-hint').textContent=toolHint();renderScene();renderHits();renderPreview();renderInspector();renderMotion();$('map-meta').textContent=L.levelName(z)+' · 网格 25 × 17';}
+ function renderMode(){
+  const metro=isMetro();document.body.dataset.mode=metro?'metro':'road';document.querySelectorAll('[data-mode]').forEach(b=>{if(b.tagName==='BUTTON')b.setAttribute('aria-pressed',String((b.dataset.mode==='metro')===metro));});
+  $('mode-help').textContent=metro?'站台双向收发 · 列车数＝⌊站台数÷3⌋':'两个工作台分别自动保存';$('project-name').textContent=metro?'地铁工作台':'城市实验场';document.querySelector('.map-heading h2').textContent=metro?'地铁线路工作台':'城市实验场';
+  for(const [t,label] of Object.entries(metro?{road:'绘制轨道',direction:'轨道方向',source:'设置站台',route:'地铁线路'}:{road:'绘制道路',direction:'道路方向',source:'车辆入口',route:'行驶路线'}))document.querySelector('[data-tool="'+t+'"] span').textContent=label;
+  document.querySelector('.arrivals>span').textContent=metro?'累计停站':'累计到达';document.querySelector('.metric-grid>div:nth-child(1)>span:last-child').textContent=metro?'在线列车':'在途车辆';document.querySelector('.metric-grid>div:nth-child(2)>span:last-child').textContent=metro?'停站 / 等候':'排队车辆';document.querySelector('.metric-grid>div:nth-child(3)>span:last-child').textContent=metro?'平均站间 / 秒':'平均用时 / 秒';
+  document.querySelector('.arrivals>div>span').innerHTML=(metro?'次':'辆')+' <svg><use href="#i-out"/></svg>';document.querySelector('.arrivals>small').textContent=metro?'沿手画线路逐站停靠。':'每一次顺畅到达，都是好设计。';document.querySelector('.metric-grid>div:nth-child(4)>span:last-child').textContent=metro?'轨道段数':'道路段数';document.querySelector('.map-legend>span:nth-child(1)').innerHTML='<i class="entry-dot"></i>'+(metro?'站台':'入口');document.querySelector('.map-legend>span:nth-child(2)').innerHTML='<i class="exit-dot"></i>'+(metro?'双向轨道':'出口');document.querySelector('.map-legend>span:nth-child(3)').innerHTML='<i class="signal-dot"></i>'+(metro?'轨道信号':'信号灯');
+  $('demand-controls').hidden=metro;$('metro-settings').hidden=!metro;$('train-cars').value=map.trainCars??6;$('build-level').value=String(buildLevel);$('only-level').checked=onlyLevel;$('draw-dir').value=drawDir;$('draw-crossing').value=crossingMode;$('tool-hint').textContent=toolHint();$('grid').setAttribute('transform','translate('+(buildLevel*3)+' '+(-buildLevel*4)+')');
+ }
  function toast(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3200);}
- function save(manual=false){try{localStorage.setItem(STORE,JSON.stringify(map));$('save-state').textContent='✓ 已保存到本地';if(manual)toast('方案已保存在此设备');}catch{$('save-state').textContent='保存不可用';toast('浏览器存储不可用，可导出 JSON 保存方案');}}
+ function save(manual=false){try{localStorage.setItem(isMetro()?METRO_STORE:STORE,JSON.stringify(map));localStorage.setItem(MODE_STORE,isMetro()?'metro':'road');$('save-state').textContent='✓ 已保存到本地';if(manual)toast('方案已保存在此设备');}catch{$('save-state').textContent='保存不可用';toast('浏览器存储不可用，可导出 JSON 保存方案');}}
  function setRunning(on,reason=''){
   running=on;pauseReason=on?'':reason;$('run').innerHTML='<svg><use href="#i-'+(on?'pause':'play')+'"/></svg><span>'+(on?'暂停模拟':'开始模拟')+'</span>';
   $('mode-label').textContent=on?'模拟运行中':'规划模式';$('run-status').textContent=on?'车流运行中':'准备就绪';$('live-tag').textContent=on?'● 运行中':sim.time?'已暂停':'待运行';$('map').dataset.running=String(on);lastTime=0;
@@ -24,21 +40,24 @@
  }
  function edit(change,message){
   const before=JSON.stringify(map);change();C.cleanup(map);const after=JSON.stringify(map);if(before===after){renderInspector();renderPreview();return;}
-  undo.push(before);if(undo.length>60)undo.shift();redo=[];setRunning(false);sim=new Simulation(map);anchor=null;save();render();if(message)toast(message);
+  undo.push(before);if(undo.length>60)undo.shift();redo=[];sim=new Simulation(map);setRunning(false);anchor=null;save();render();if(message)toast(message);
  }
- function history(back){const from=back?undo:redo,to=back?redo:undo;if(!from.length)return;to.push(JSON.stringify(map));map=C.validate(JSON.parse(from.pop()));setRunning(false);sim=new Simulation(map);selection=null;selectedRoute=null;anchor=null;routeDraft=[];save();render();toast(back?'已撤销':'已重做');}
- function switchTool(next){tool=next;anchor=null;hover=null;routeDraft=[];document.querySelectorAll('[data-tool]').forEach(b=>{const active=b.dataset.tool===tool;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});$('tool-hint').textContent=hints[tool];$('road-options').hidden=tool!=='road';$('road-options').style.display=tool==='road'?'':'none';renderPreview();}
+ function history(back){const from=back?undo:redo,to=back?redo:undo;if(!from.length)return;to.push(JSON.stringify(map));map=C.validate(JSON.parse(from.pop()));sim=new Simulation(map);setRunning(false);selection=null;selectedRoute=null;anchor=null;routeDraft=[];save();render();toast(back?'已撤销':'已重做');}
+ function switchTool(next){tool=next;anchor=null;hover=null;routeDraft=[];document.querySelectorAll('[data-tool]').forEach(b=>{const active=b.dataset.tool===tool;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});$('tool-hint').textContent=toolHint();$('road-options').hidden=!['road','ramp'].includes(tool);$('road-options').style.display=['road','ramp'].includes(tool)?'':'none';renderPreview();}
  function roadAt(node){return map.roads.find(r=>r.a===node||r.b===node);}
+ function drawRoad(a,b){try{const z=C.drawingLevel(map,a,b,crossingMode),start=C.node(...C.xy(a),z),end=C.node(...C.xy(b),z);selection=null;edit(()=>C.draw(map,start,end,drawDir,{crossing:crossingMode}),'已按选定高度绘制，原有其它层道路保留');if(z!==buildLevel){changeLevel(z);toast('整段新道路已设为'+L.levelName(z)+'，下方道路独立保留');}}catch(err){toast(err.message);}}
  function inspectNode(node){
   selectedRoute=null;
-  selection=C.bridgeAt(map,node)?{type:'bridge',node}:map.sources.some(s=>s.node===node)?{type:'source',node}:map.signals.some(s=>s.node===node)?{type:'signal',node}:map.exits.includes(node)?{type:'exit',node}:{type:'node',node};renderInspector();renderPreview();
+  selection=isMetro()&&map.stations.includes(node)?{type:'station',node}:C.bridgeAt(map,node)?{type:'bridge',node}:map.sources.some(s=>s.node===node)?{type:'source',node}:map.signals.some(s=>s.node===node)?{type:'signal',node}:map.exits.includes(node)?{type:'exit',node}:{type:'node',node};renderInspector();renderPreview();
  }
  function activateNode(node){
+  if(tool==='ramp'){if(!anchor){anchor=node;hover=node;$('tool-hint').textContent=toolHint();renderPreview();toast('已选坡道起点，请切换到相邻高度后点击终点');return;}try{const a=anchor;edit(()=>C.ramp(map,a,node,drawDir),'坡道已连接相邻高度');}catch(err){toast(err.message);}return;}
   if(tool==='route'){
-   if(!routeDraft.length){if(!map.sources.some(s=>s.node===node)){toast('先点击一个车辆入口作为路线起点');return;}routeDraft=[node];hover=node;selection={type:'source',node};renderInspector();renderPreview();toast('已选入口，按行驶顺序逐段点击道路，最后点击出口');return;}
+   if(!routeDraft.length){if(!map.sources.some(s=>s.node===node)){toast(isMetro()?'先点击起始站台':'先点击一个车辆入口作为路线起点');return;}routeDraft=[node];hover=node;selection={type:isMetro()?'station':'source',node};renderInspector();renderPreview();toast(isMetro()?'按顺序点击途经节点和站台，最后点击完成线路':'已选入口，按行驶顺序逐段点击道路，最后点击出口');return;}
    if(node===routeDraft.at(-1))return;
-   const candidate=[...routeDraft,...C.line(routeDraft.at(-1),node).slice(1)];
+   const candidate=[...routeDraft,...(C.level(routeDraft.at(-1))===C.level(node)?C.line(routeDraft.at(-1),node).slice(1):[node])];
    if(!C.canFollow(map,candidate)){toast('这段走不通：检查道路方向，不能掉头或跨层转弯；可在转角处分段点击');return;}
+   if(isMetro()){routeDraft=candidate;hover=node;renderInspector();renderPreview();return;}
    if(map.exits.includes(node)){
     const start=candidate[0],existing=map.routes.findIndex(r=>r.nodes.join('|')===candidate.join('|'));routeDraft=[];selection={type:'source',node:start};
     if(existing>=0){selectedRoute=existing;renderInspector();renderPreview();toast('这条路线已经存在，可添加不同的途经路线');}
@@ -47,12 +66,13 @@
    else{routeDraft=candidate;hover=node;renderPreview();}return;
   }
   if(tool==='road'){
-   if(anchor && anchor!==node){const a=anchor;selection=null;edit(()=>C.draw(map,a,node,drawDir,{crossing:crossingMode}),'道路已绘制；中途跨线与端点连接按你的选择处理');}
+   if(anchor && anchor!==node){const a=anchor;drawRoad(a,node);}
    else{anchor=node;hover=node;renderPreview();toast('已选起点，请点击终点；Esc 取消');}return;
   }
   if(tool==='select'){inspectNode(node);return;}
   if(tool==='direction'){const r=roadAt(node);if(r)activateRoad(C.key(r.a,r.b));else toast('先绘制道路，再设置方向');return;}
   if(!C.nodes(map).includes(node)){toast('请先在这里绘制道路');return;}
+  if(isMetro()&&['source','exit'].includes(tool)){selection={type:'station',node};try{edit(()=>C.addStation(map,node),'站台已设置，同时作为列车入口和出口');}catch(err){toast(err.message);}return;}
   if(tool==='bridge'){
    try{const old=C.bridgeAt(map,node),over=old?.over==='ew'?'ns':'ew';selection={type:'bridge',node};edit(()=>C.setBridge(map,node,over),'已设为立交桥，桥上桥下独立直行');}catch(err){toast(err.message);}return;
   }
@@ -67,7 +87,8 @@
    selection={type:'signal',node};edit(()=>{if(!map.signals.some(s=>s.node===node))map.signals.push({node,cycle:6,offset:0});},'已放置信号灯');
   }else if(tool==='erase'){
    selection=null;edit(()=>{
-    if(C.bridgeAt(map,node))map.bridges=map.bridges.filter(b=>b.node!==node);
+    if(isMetro()&&map.stations.includes(node))C.removeStation(map,node);
+    else if(C.bridgeAt(map,node))map.bridges=map.bridges.filter(b=>b.node!==node);
     else if(map.sources.some(s=>s.node===node))map.sources=map.sources.filter(s=>s.node!==node);
     else if(map.exits.includes(node))map.exits=map.exits.filter(n=>n!==node);
     else if(map.signals.some(s=>s.node===node))map.signals=map.signals.filter(s=>s.node!==node);
@@ -83,45 +104,42 @@
   if(tool==='direction')edit(()=>C.setDirection(r,{both:'forward',forward:'reverse',reverse:'both'}[r.dir]),'已调整方向，箭头指示通行方向');
   else{renderInspector();renderPreview();}
  }
- function arrow(a,b,fraction,offset=0){const [ax,ay]=pos(a),[bx,by]=pos(b),angle=Math.atan2(by-ay,bx-ax)*180/Math.PI;const x=ax+(bx-ax)*fraction,y=ay+(by-ay)*fraction;return '<path d="m-3 -3 3 3-3 3" fill="none" stroke="#d7d5ad" stroke-width="1.4" opacity=".8" transform="translate('+x+' '+y+') rotate('+angle+') translate(0 '+offset+')"/>';}
- function renderRoads(){
-  let outer='',inner='',lanes='',arrows='';
-  map.roads.forEach(r=>{const d=path([r.a,r.b]);outer+='<path d="'+d+'"/>';inner+='<path d="'+d+'"/>';lanes+='<path d="'+d+'"/>';
-   if(r.dir==='both'){arrows+=arrow(r.a,r.b,.5,6)+arrow(r.b,r.a,.5,6);}else arrows+=r.dir==='forward'?arrow(r.a,r.b,.5,0):arrow(r.b,r.a,.5,0);
-  });
-  const junctions=C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3).map(n=>{const [x,y]=pos(n);return '<rect x="'+(x-12)+'" y="'+(y-12)+'" width="24" height="24" rx="3" fill="#56645b"/>';}).join('');
-  $('roads').innerHTML='<g fill="none" stroke="#86917c" stroke-width="30" stroke-linecap="round">'+outer+'</g><g fill="none" stroke="#56645b" stroke-width="26" stroke-linecap="round">'+inner+'</g><g fill="none" stroke="#c8c7a5" stroke-width=".8" stroke-dasharray="4 7" opacity=".6">'+lanes+'</g>'+junctions+arrows;
- }
- function renderMarkers(){
-  let html='';
-  map.sources.forEach((s,i)=>{const [x,y]=pos(s.node),letter=String.fromCharCode(65+i);html+='<g transform="translate('+x+' '+y+')"><circle r="17" fill="#263d2c" stroke="#b7e894" stroke-width="2"/><circle r="12" fill="#b7e894"/><text text-anchor="middle" y="4" fill="#263c25" font-size="11" font-weight="700">'+letter+'</text><rect x="-26" y="-42" width="52" height="18" rx="4" fill="#1b3224"/><text x="0" y="-30" text-anchor="middle" fill="#b7e894" font-size="9">入口 '+letter+'</text></g>';});
-  map.exits.forEach((n,i)=>{const [x,y]=pos(n);html+='<g transform="translate('+x+' '+y+')"><circle r="16" fill="#26372b" stroke="#ecb17c" stroke-width="2"/><path d="M-7 0H7m-5-5 5 5-5 5" stroke="#ecb17c" stroke-width="2" fill="none"/><rect x="-26" y="-42" width="52" height="18" rx="4" fill="#352e24"/><text x="0" y="-30" text-anchor="middle" fill="#ecb17c" font-size="9">出口 '+(i+1)+'</text></g>';});
-  map.signals.forEach(s=>{const [x,y]=pos(s.node);html+='<g transform="translate('+(x+13)+' '+(y-29)+')"><rect width="23" height="14" rx="5" fill="#17241e" stroke="#739b83"/><circle data-light-ew="'+s.node+'" cx="6.5" cy="7" r="3.3"/><circle data-light-ns="'+s.node+'" cx="16.5" cy="7" r="3.3"/></g>';});
-  $('markers').innerHTML=html;
- }
- function renderBridges(){
-  $('bridges').innerHTML=map.bridges.map(b=>{const [x,y]=pos(b.node);let arrows='';
-   for(const r of map.roads.filter(r=>(r.a===b.node||r.b===b.node)&&(C.xy(r.a)[1]===C.xy(r.b)[1]?'ew':'ns')===b.over)){const f=r.b===b.node?0.72:0.28;if(r.dir!=='reverse')arrows+=arrow(r.a,r.b,f,r.dir==='both'?6:0);if(r.dir!=='forward')arrows+=arrow(r.b,r.a,1-f,r.dir==='both'?6:0);}
-   return '<g data-bridge="'+b.node+'" data-over="'+b.over+'"><g transform="translate('+x+' '+y+') rotate('+(b.over==='ew'?0:90)+')"><rect x="-34" y="-10" width="68" height="30" rx="1" fill="#0b2017" opacity=".6"/><rect x="-34" y="-14" width="68" height="28" fill="#56645b"/><path d="M-34 -14H34M-34 14H34" stroke="#8b967e" stroke-width="1.5"/><path d="M-34 0H34" stroke="#c8c7a5" stroke-width=".8" stroke-dasharray="4 7" opacity=".6"/></g>'+arrows+'</g>';}).join('');
+ function renderScene(){
+  const scene=L.staticScene(map,buildLevel,onlyLevel);$('roads').innerHTML=scene.roads;$('markers').innerHTML=scene.markers;$('bridges').innerHTML=scene.bridges;$('negative-levels').innerHTML=scene.below;$('positive-levels').innerHTML=scene.above;
  }
  function renderHits(){
-  let html=map.roads.map(r=>{const [ax,ay]=pos(r.a),[bx,by]=pos(r.b);return '<rect class="road-hit" data-road="'+C.key(r.a,r.b)+'" x="'+(Math.min(ax,bx)-9)+'" y="'+(Math.min(ay,by)-9)+'" width="'+(Math.abs(bx-ax)+18)+'" height="'+(Math.abs(by-ay)+18)+'" rx="4" fill="transparent" role="button" aria-label="道路 '+r.a+' 至 '+r.b+'"/>';}).join('');
-  for(let y=0;y<C.ROWS;y++)for(let x=0;x<C.COLS;x++){const id=x+','+y,[px,py]=pos(id);const source=map.sources.some(s=>s.node===id),exit=map.exits.includes(id),signal=map.signals.some(s=>s.node===id);html+='<circle class="node-hit'+(C.bridgeAt(map,id)?' bridge-hit':'')+'" data-node="'+id+'" cx="'+px+'" cy="'+py+'" r="13" role="button" tabindex="'+(id===keyboardNode?'0':'-1')+'" aria-label="网格 '+id+(source?'，入口 '+sourceName(id):exit?'，'+exitName(id):'')+(signal?'，信号灯':'')+'"/>';}
+  let html=map.roads.filter(r=>C.level(r.a)===buildLevel||C.level(r.b)===buildLevel).map(r=>{const [ax,ay]=pos(r.a),[bx,by]=pos(r.b);return '<rect class="road-hit" data-road="'+C.key(r.a,r.b)+'" x="'+(Math.min(ax,bx)-9)+'" y="'+(Math.min(ay,by)-9)+'" width="'+(Math.abs(bx-ax)+18)+'" height="'+(Math.abs(by-ay)+18)+'" rx="4" fill="transparent" role="button" aria-label="道路 '+r.a+' 至 '+r.b+'"/>';}).join('');
+  for(let y=0;y<C.ROWS;y++)for(let x=0;x<C.COLS;x++){const id=C.node(x,y,buildLevel),[px,py]=pos(id);const source=map.sources.some(s=>s.node===id),exit=map.exits.includes(id),signal=map.signals.some(s=>s.node===id),station=isMetro()&&map.stations.includes(id);html+='<circle class="node-hit'+(C.bridgeAt(map,id)?' bridge-hit':'')+'" data-node="'+id+'" cx="'+px+'" cy="'+py+'" r="13" role="button" tabindex="'+(id===keyboardNode?'0':'-1')+'" aria-label="网格 '+id+(station?'，站台 '+(map.stations.indexOf(id)+1):source?'，入口 '+sourceName(id):exit?'，'+exitName(id):'')+(signal?'，信号灯':'')+'"/>';}
   $('hit-targets').innerHTML=html;
  }
  function renderPreview(){
-  let d='';if(anchor){d='<path d="'+path(C.line(anchor,hover||anchor))+'" stroke="#c6f6a4" stroke-width="24" opacity=".35" stroke-linecap="round" fill="none"/><circle cx="'+pos(anchor)[0]+'" cy="'+pos(anchor)[1]+'" r="8" fill="#d4ffb6"/>';}$('draw-preview').innerHTML=d;
-  if(routeDraft.length){let points=routeDraft;if(hover&&hover!==points.at(-1))points=[...points,...C.line(points.at(-1),hover).slice(1)];$('draw-preview').innerHTML='<path d="'+path(points)+'" fill="none" stroke="'+(C.canFollow(map,points)?'#e7c486':'#d48d72')+'" stroke-width="5" stroke-dasharray="7 5"/>';}
+  let d='';if(anchor){const points=C.level(anchor)===C.level(hover||anchor)?C.line(anchor,hover||anchor):[anchor,hover];d='<path d="'+path(points)+'" stroke="#c6f6a4" stroke-width="24" opacity=".35" stroke-linecap="round" fill="none"/><circle cx="'+pos(anchor)[0]+'" cy="'+pos(anchor)[1]+'" r="8" fill="#d4ffb6"/>';}$('draw-preview').innerHTML=d;
+  if(routeDraft.length){let points=routeDraft;if(hover&&hover!==points.at(-1))points=[...points,...(C.level(points.at(-1))===C.level(hover)?C.line(points.at(-1),hover).slice(1):[hover])];$('draw-preview').innerHTML='<path d="'+path(points)+'" fill="none" stroke="'+(C.canFollow(map,points)?'#e7c486':'#d48d72')+'" stroke-width="5" stroke-dasharray="7 5"/>';}
   let h='';if(selection?.type==='source'){
    const s=map.sources.find(s=>s.node===selection.node),chosen=selectedRoute===null?null:map.routes[selectedRoute];
    if(s){const routes=chosen?.nodes[0]===s.node?[chosen.nodes]:C.exitRoutes(map,s.node);h=routes.map(route=>'<path d="'+path(route)+'" fill="none" stroke="'+(C.canFollow(map,route)?'#c8f5a9':'#e69c80')+'" stroke-width="'+(chosen?5:3)+'" stroke-dasharray="8 8" opacity=".8"/>').join('');}
   }
   if(selection?.type==='road'){const r=map.roads.find(r=>C.key(r.a,r.b)===selection.key);if(r)h='<path d="'+path([r.a,r.b])+'" fill="none" stroke="#c8f5a9" stroke-width="32" opacity=".25"/>';}
+  if(isMetro()&&(selectedRoute!==null||!selection||selection.type==='station')){const routes=selectedRoute!==null&&map.routes[selectedRoute]?[map.routes[selectedRoute]]:map.routes.filter(r=>!selection?.node||r.nodes.includes(selection.node));h=routes.map(r=>'<path d="'+path(r.nodes)+'" fill="none" stroke="#a5dfcf" stroke-width="4" stroke-dasharray="7 6" opacity=".75"/>').join('');}
   $('route-preview').innerHTML=h;
+ }
+ function metroInspector(){
+  const station=selection?.type==='station'?selection.node:null,ready=routeDraft.length>1&&map.stations.includes(routeDraft.at(-1))&&routeDraft[0]!==routeDraft.at(-1);
+  let html=station?'<h4 class="inspect-title">站台 '+(map.stations.indexOf(station)+1)+'<span>M</span></h4><p class="inspect-sub">'+L.levelName(C.level(station))+' · ('+station+')<br>同时作为列车入口和出口</p><button id="route-start">＋ 从这里绘制地铁线路</button>':'<h4 class="inspect-title">地铁线路</h4><p class="inspect-sub">先放置站台，再用线路工具按顺序连接。途中站台会停车，两个终点自动折返。</p>';
+  if(routeDraft.length)html+='<p class="inspect-sub">已绘制 '+(routeDraft.length-1)+' 格，经过 '+routeDraft.filter(n=>map.stations.includes(n)).length+' 个站台。切层可继续沿坡道绘制。</p><button id="finish-metro-line" class="metro-finish"'+(ready?'':' disabled')+'>完成线路</button>';
+  html+='<div class="route-list">'+map.routes.map((r,i)=>'<div class="route-item'+(selectedRoute===i?' chosen':'')+'"><button class="route-preview-button" data-preview-route="'+i+'" aria-label="预览线路 '+(i+1)+'"><span>线路 '+(i+1)+' · '+r.nodes.filter(n=>map.stations.includes(n)).length+' 站</span><small>'+(r.nodes.length-1)+' 格 · '+(sim.lines.some(l=>l.index===i)?'可往返':'待修复')+'</small></button><button class="route-delete" data-remove-route="'+i+'" aria-label="删除线路 '+(i+1)+'">×</button></div>').join('')+'</div>';
+  if(map.routes.length)html+='<button id="route-show-all"'+(selectedRoute===null?' disabled':'')+'>显示全部线路</button>';if(station)html+='<button id="station-remove">移除这个站台</button>';return html;
+ }
+ function finishMetroLine(){
+  const candidate=[...routeDraft];if(candidate.length<2||!map.stations.includes(candidate.at(-1))||candidate[0]===candidate.at(-1)){toast('请把线路画到另一个终点站台');return;}
+  if(!C.canFollow(map,candidate)||!C.canFollow(map,[...candidate].reverse())){toast('线路需要可双向往返，请检查单向轨道和连接');return;}
+  if(candidate.length-1<window.TrafficMetro.halfLength(map)*2+0.1){toast('线路太短，容不下当前编组，请延长轨道');return;}
+  routeDraft=[];selection={type:'station',node:candidate[0]};edit(()=>{C.addRoute(map,candidate);selectedRoute=map.routes.findIndex(r=>r.nodes.join('|')===candidate.join('|'));},'地铁线路已保存，将逐站停靠并在终点折返');
  }
  function renderInspector(){
   let html='',type='INSPECTOR';
-  if(selection?.type==='bridge'){
+  if(isMetro()&&(!selection||selection.type==='station')){type='METRO';html=metroInspector();}
+  else if(selection?.type==='bridge'){
    const b=C.bridgeAt(map,selection.node);if(b){type='OVERPASS';html='<h4 class="inspect-title">立交桥<span>↟</span></h4><p class="inspect-sub">坐标 ('+b.node+')<br>桥上桥下各自直行，互不转弯</p><label for="bridge-over">哪条道路从上面跨过？</label><select id="bridge-over"><option value="ew"'+(b.over==='ew'?' selected':'')+'>东西道路在上</option><option value="ns"'+(b.over==='ns'?' selected':'')+'>南北道路在上</option></select><button id="bridge-remove">拆桥 · 恢复平面路口</button>';}
   }else if(selection?.type==='source'){
    const s=map.sources.find(s=>s.node===selection.node);
@@ -143,6 +161,7 @@
  function renderStats(){
   $('arrived').textContent=sim.arrived;$('active-cars').textContent=sim.cars.length;$('waiting').textContent=sim.waiting;$('travel').textContent=sim.average?sim.average.toFixed(1):'—';
   const secs=Math.floor(sim.time);$('clock').textContent=String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0');
+  if(isMetro()){$('metro-fleet-summary').textContent='⌊'+map.stations.length+' ÷ 3⌋＝'+sim.trainCount+' 列 · 每列 '+map.trainCars+' 节；在线 '+sim.cars.length+'，待出库 '+sim.pendingTrains.length;$('flow-note').textContent=(running?'沿手画线路运行，每站停车两秒，终点折返。':pauseReason|| (sim.time?'模拟已暂停，点击开始继续。':'先设置站台并完成线路。'))+(sim.turnarounds?' 已折返 '+sim.turnarounds+' 次。':'');$('reverse-yield').disabled=true;return;}
   const waitingEntries=sim.pending.flatMap((p,i)=>p?['入口 '+String.fromCharCode(65+i)]:[]);
   $('flow-note').textContent=running?(waitingEntries.length?waitingEntries.join('、')+' 正在等前车腾出位置；其他入口按各自道路空位继续发车。':'各入口按设定流量独立发车中。'):(pauseReason|| (sim.time?'模拟已暂停，点击开始模拟继续发车。':''));
   if(sim.rerouted)$('flow-note').textContent+=' 自动避堵已改道 '+sim.rerouted+' 次。';
@@ -152,53 +171,51 @@
   $('reverse-yield').textContent=sim.reverseCar?'↶ 正在后退…':'↶ 后退让行';
  }
  function renderMotion(){
-  const colors=['#c6e9ab','#e9b788','#a4d5de','#d9c6e7','#eddca0'];
-  let above='',below='';
-  for(const c of sim.cars){
-   const a=c.path[c.i],b=c.path[c.i+1],[ax,ay]=pos(a),[bx,by]=pos(b),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),axis=dx?'ew':'ns';
-   let x=ax+dx*c.p-dy/len*6,y=ay+dy*c.p+dx/len*6,under=false,layer='ground';
-   const bridge=C.bridgeAt(map,a)||C.bridgeAt(map,b);
-   if(bridge){const distance=(bridge.node===a?c.p:1-c.p)*40;if(distance<35){under=axis!==bridge.over;layer=under?'under':'over';}}
-   const car='<g data-car-id="'+c.id+'" data-motion="'+(c.reversing?'reverse':sim.time<(c.holdUntil||0)?'yielding':'forward')+'" data-progress="'+c.p+'" data-reroutes="'+(c.reroutes||0)+'" data-segment="'+a+'>'+b+'" data-destination="'+c.path.at(-1)+'" data-layer="'+layer+'" transform="translate('+x+' '+y+') rotate('+(Math.atan2(dy,dx)*180/Math.PI)+')"><title>'+(c.reversing?'后退让行':sim.time<(c.holdUntil||0)?'等待其它车辆先行':'车辆行驶中')+'</title><rect x="-6.5" y="-3.4" width="13" height="6.8" rx="2" fill="'+colors[c.source%colors.length]+'" stroke="'+(c.reversing?'#ffd799':'#1c342b')+'" stroke-width="'+(c.reversing?'1.6':'.7')+'"/><rect x="1" y="-2.5" width="2.8" height="5" rx=".7" fill="#3a5546"/><rect x="-4.2" y="-2.5" width="2" height="5" rx=".5" fill="#5a7057"/>'+(c.reversing?'<path d="M-6 -2v1M-6 1v1" stroke="#fff7db" stroke-width="2"/>':'')+'</g>';
-   if(under)below+=car;else above+=car;
-  }
-  $('under-cars').innerHTML=below;$('cars').innerHTML=above;
+  const motion=L.motion(map,sim,buildLevel,onlyLevel),ground=motion.get(0)||{under:'',over:''};$('under-cars').innerHTML=ground.under;$('cars').innerHTML=ground.over;
+  document.querySelectorAll('[data-elevation]').forEach(group=>{const layer=motion.get(Number(group.dataset.elevation))||{under:'',over:''};group.querySelector('.level-under-cars').innerHTML=layer.under;group.querySelector('.level-cars').innerHTML=layer.over;});
   map.signals.forEach(s=>{const ew=document.querySelector('[data-light-ew="'+s.node+'"]'),ns=document.querySelector('[data-light-ns="'+s.node+'"]');if(ew)ew.setAttribute('fill',C.green(s,sim.time,'ew')?'#b7ed88':'#dc7970');if(ns)ns.setAttribute('fill',C.green(s,sim.time,'ns')?'#b7ed88':'#dc7970');});
  }
  function render(){
-  renderRoads();renderBridges();renderMarkers();renderHits();renderPreview();renderInspector();renderMotion();renderStats();
+  renderMode();renderScene();renderHits();renderPreview();renderInspector();renderMotion();renderStats();
   $('road-count').textContent=map.roads.length;$('map').dataset.roads=map.roads.length;$('demand').value=map.demand;$('demand-value').textContent=map.demand;
-  $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;$('map-meta').textContent=map.roads.length?'自由建造 · 网格 25 × 17':'空白地图 · 连接两点开始画路';
+  $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;$('map-meta').textContent=L.levelName(buildLevel)+' · '+(map.roads.length?'网格 25 × 17':'空白地图 · 连接两点开始画路');
   const note=$('network-note');note.classList.remove('warning');
+  if(isMetro()){
+   note.textContent=!map.roads.length?'先绘制轨道，再放置站台。':map.stations.length<3?'已有 '+map.stations.length+' 座站台，按公式当前为 0 列；至少三站才配置列车。':!map.routes.length?'请用地铁线路工具画到终点站台，并点击完成线路。':sim.issues.length?sim.issues.join('；'):sim.blockedSources.length?'有 '+sim.blockedSources.length+' 座站台尚未接入有效线路。':'✓ '+map.stations.length+' 座站台 · '+sim.trainCount+' 列车 · '+sim.lines.length+' 条往返线路';
+   if(!sim.lines.length||sim.issues.length||sim.blockedSources.length)note.classList.add('warning');return;
+  }
   if(!map.roads.length)note.textContent='先画道路，再安排入口与出口。';
   else if(!map.sources.length||!map.exits.length){note.textContent='再设置'+(!map.sources.length?'入口':'')+(!map.sources.length&&!map.exits.length?'和':'')+(!map.exits.length?'出口':'')+'，就能开始模拟。';note.classList.add('warning');}
   else if(sim.blockedSources.length){const planned=sim.blockedSources.some(s=>map.routes.some(r=>r.nodes[0]===s.node));note.textContent='⚠ '+sim.blockedSources.map(s=>'入口 '+sourceName(s.node)).join('、')+(planned?' 的指定路线不通，车辆不会自动改道；请修复或删除路线。':' 无法到达出口，请检查道路方向与连接。');note.classList.add('warning');}
   else note.textContent='✓ '+map.sources.length+' 个入口均有可达路线 · '+map.exits.length+' 个出口';
  }
  // Pointer input uses SVG coordinates, so the same tools work at every viewport size.
- function eventNode(e){const point=$('map').createSVGPoint();point.x=e.clientX;point.y=e.clientY;const p=point.matrixTransform($('map').getScreenCTM().inverse());return Math.max(0,Math.min(24,Math.round((p.x-40)/40)))+','+Math.max(0,Math.min(16,Math.round((p.y-40)/40)));}
+ function eventNode(e){const point=$('map').createSVGPoint();point.x=e.clientX;point.y=e.clientY;const p=point.matrixTransform($('map').getScreenCTM().inverse());return C.node(Math.max(0,Math.min(24,Math.round((p.x-40-buildLevel*3)/40))),Math.max(0,Math.min(16,Math.round((p.y-40+buildLevel*4)/40))),buildLevel);}
  $('map').addEventListener('pointerdown',e=>{if(e.button!==0)return;pointerStart={node:eventNode(e),x:e.clientX,y:e.clientY};if(tool==='road'){$('map').setPointerCapture(e.pointerId);e.preventDefault();}});
  $('map').addEventListener('pointermove',e=>{if(tool==='road'||tool==='route'){hover=eventNode(e);if(tool==='road'&&pointerStart&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>5&&!anchor)anchor=pointerStart.node;renderPreview();}});
  $('map').addEventListener('pointerup',e=>{
   if(!pointerStart)return;const start=pointerStart;pointerStart=null;const node=eventNode(e);
-  if(tool==='road'){const moved=Math.hypot(e.clientX-start.x,e.clientY-start.y)>5;if(moved&&start.node!==node){const a=anchor||start.node;edit(()=>C.draw(map,a,node,drawDir,{crossing:crossingMode}),'道路已绘制；中途跨线与端点连接按你的选择处理');}else activateNode(node);}
+  if(tool==='road'){const moved=Math.hypot(e.clientX-start.x,e.clientY-start.y)>5;if(moved&&start.node!==node){const a=anchor||start.node;drawRoad(a,node);}else activateNode(node);}
   else{const road=e.target.closest('[data-road]');if(road&&['select','direction','erase'].includes(tool))activateRoad(road.dataset.road);else activateNode(node);}
  });
  $('map').addEventListener('pointercancel',()=>{pointerStart=null;anchor=null;renderPreview();});
  $('map').addEventListener('keydown',e=>{
   const target=e.target.closest('[data-node]');if(!target)return;const [x,y]=C.xy(target.dataset.node);const dirs={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
-  if(dirs[e.key]){e.preventDefault();const [dx,dy]=dirs[e.key];keyboardNode=Math.max(0,Math.min(24,x+dx))+','+Math.max(0,Math.min(16,y+dy));target.setAttribute('tabindex','-1');const next=document.querySelector('[data-node="'+keyboardNode+'"]');next.setAttribute('tabindex','0');next.focus();if(anchor){hover=keyboardNode;renderPreview();}}
+  if(dirs[e.key]){e.preventDefault();const [dx,dy]=dirs[e.key];keyboardNode=C.node(Math.max(0,Math.min(24,x+dx)),Math.max(0,Math.min(16,y+dy)),buildLevel);target.setAttribute('tabindex','-1');const next=document.querySelector('[data-node="'+keyboardNode+'"]');next.setAttribute('tabindex','0');next.focus();if(anchor){hover=keyboardNode;renderPreview();}}
   else if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();keyboardNode=target.dataset.node;activateNode(keyboardNode);document.querySelector('[data-node="'+keyboardNode+'"]')?.focus();}
  });
  document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>switchTool(b.dataset.tool)));
  document.querySelectorAll('[data-speed]').forEach(b=>b.addEventListener('click',()=>{speed=Number(b.dataset.speed);document.querySelectorAll('[data-speed]').forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-pressed',String(x===b));});}));
  $('draw-dir').addEventListener('change',e=>drawDir=e.target.value);
  $('draw-crossing').addEventListener('change',e=>crossingMode=e.target.value);
- $('run').addEventListener('click',()=>{if(!running&&(!map.sources.length||!map.exits.length||sim.blockedSources.length===map.sources.length)){toast('请先连接道路，并设置有可达路线的入口和出口');return;}anchor=null;renderPreview();setRunning(!running);});
+ document.querySelectorAll('button[data-mode]').forEach(b=>b.addEventListener('click',()=>changeMode(b.dataset.mode)));
+ $('build-level').addEventListener('change',e=>changeLevel(Number(e.target.value)));$('level-up').addEventListener('click',()=>changeLevel(buildLevel+1));$('level-down').addEventListener('click',()=>changeLevel(buildLevel-1));$('only-level').addEventListener('change',e=>{onlyLevel=e.target.checked;renderScene();renderMotion();});
+ $('train-cars').addEventListener('change',e=>{const count=Number(e.target.value);if(!Number.isInteger(count)||count<1||count>12){e.target.value=map.trainCars??6;toast('车厢数请填写 1 到 12 的整数');return;}edit(()=>{map.trainCars=count;},'编组已更新，列车按站台总数重新配置');});
+ $('run').addEventListener('click',()=>{if(!running&&isMetro()&&(!sim.trainCount||!sim.lines.length)){toast(!sim.trainCount?'站台数不足三座，按公式当前为零列车':'请先完成可双向往返的地铁线路');return;}if(!running&&!isMetro()&&(!map.sources.length||!map.exits.length||sim.blockedSources.length===map.sources.length)){toast('请先连接道路，并设置有可达路线的入口和出口');return;}anchor=null;renderPreview();setRunning(!running);});
  $('reset').addEventListener('click',()=>{setRunning(false);sim.reset();renderMotion();renderStats();toast('模拟已重置，路网设计保留');});
  $('reverse-yield').addEventListener('click',()=>{const c=sim.requestReverse(true);if(!c){toast('暂无可安全后退的待行车辆：请先等后方腾出空间');return;}renderMotion();renderStats();toast(running?'车辆正在沿原路慢速后退，让出空间':'已安排后退让行，点击开始模拟继续');});
  $('undo').addEventListener('click',()=>history(true));$('redo').addEventListener('click',()=>history(false));$('save').addEventListener('click',()=>save(true));
- $('new-map').addEventListener('click',()=>{selection=null;anchor=null;hover=null;switchTool('road');edit(()=>{map=C.empty();},'空白地图已就绪，可撤销恢复上一个方案');});
+ $('new-map').addEventListener('click',()=>{selection=null;anchor=null;hover=null;switchTool('road');edit(()=>{map=C.empty(map.mode);},'空白地图已就绪，可撤销恢复上一个方案');});
  function examplePreview(m){
   const roads=m.roads.map(r=>'<path d="'+path([r.a,r.b])+'"/>').join('');
   const bridges=m.bridges.map(b=>{const [x,y]=pos(b.node);return '<g transform="translate('+x+' '+y+') rotate('+(b.over==='ew'?0:90)+')"><path d="M-32 4H32" stroke="#0d2119" stroke-width="38"/><path d="M-32 0H32" stroke="#bfd09a" stroke-width="26"/></g>';}).join('');
@@ -206,12 +223,14 @@
   return '<svg class="example-preview" viewBox="0 0 1040 720" aria-hidden="true"><g fill="none" stroke="#8fa78b" stroke-width="23" stroke-linecap="round">'+roads+'</g>'+bridges+marks+'</svg>';
  }
  function openExamples(){
-  if(!$('example-cards').children.length)$('example-cards').innerHTML=window.TrafficExamples.catalog.map((e,i)=>{const m=window.TrafficExamples.create(e.id);return '<button class="example-card" data-example="'+e.id+'">'+examplePreview(m)+'<span class="example-tag">0'+(i+1)+' / '+escape(e.tag)+'</span><strong>'+escape(e.name)+'</strong><span class="example-description">'+escape(e.description)+'</span><span class="example-stats">'+m.sources.length+' 个入口 · '+m.bridges.length+' 处跨线 · '+m.routes.length+' 条路线 <b>载入 →</b></span></button>';}).join('');
+  const metro=isMetro(),E=window.TrafficExamples,catalogue=metro?E.metroCatalog:E.catalog;
+  if($('example-cards').dataset.mode!==(metro?'metro':'road')){$('example-cards').dataset.mode=metro?'metro':'road';$('example-cards').innerHTML=catalogue.map((e,i)=>{const m=metro?E.createMetro(e.id):E.create(e.id);return '<button class="example-card" data-example="'+e.id+'">'+examplePreview(m)+'<span class="example-tag">0'+(i+1)+' / '+escape(e.tag)+'</span><strong>'+escape(e.name)+'</strong><span class="example-description">'+escape(e.description)+'</span><span class="example-stats">'+(metro?m.stations.length+' 站 · '+Math.floor(m.stations.length/3)+' 列 · '+m.routes.length+' 条线路':m.sources.length+' 个入口 · '+m.bridges.length+' 处跨线 · '+m.routes.length+' 条路线')+' <b>载入 →</b></span></button>';}).join('');}
+  document.querySelector('#examples .eyebrow').textContent=metro?'METRO STUDIES · 02':'TRAFFIC STUDIES · 06';document.querySelector('.examples-note').textContent=metro?'默认六节编组，列车总数为站台数除以三向下取整。示例可继续编辑，载入支持撤销。':'均为可编辑的网格路网；四叶草与盘龙为简化示意，不按真实比例复刻。载入会替换当前地图，可通过「撤销」恢复。';
   $('examples').showModal();
  }
  $('demo').addEventListener('click',openExamples);$('examples-open').addEventListener('click',openExamples);$('close-examples').addEventListener('click',()=>$('examples').close());
  $('example-cards').addEventListener('click',e=>{
-  const card=e.target.closest('[data-example]');if(!card)return;const item=window.TrafficExamples.catalog.find(x=>x.id===card.dataset.example),next=window.TrafficExamples.create(item.id),same=JSON.stringify(map)===JSON.stringify(next),message=item.name+'已载入，点击开始模拟；可撤销恢复原图';
+  const card=e.target.closest('[data-example]');if(!card)return;const E=window.TrafficExamples,item=(isMetro()?E.metroCatalog:E.catalog).find(x=>x.id===card.dataset.example),next=isMetro()?E.createMetro(item.id):E.create(item.id),same=JSON.stringify(map)===JSON.stringify(next),message=item.name+'已载入，点击开始模拟；可撤销恢复原图';
   selection=null;anchor=null;hover=null;routeDraft=[];edit(()=>{map=next;},message);
   if(same){setRunning(false);sim.reset();renderMotion();renderStats();toast(message);}
   $('examples').close();switchTool('select');
@@ -227,12 +246,14 @@
  });
  $('inspector').addEventListener('click',e=>{if(e.target.closest('#signal-phase'))edit(()=>{const s=map.signals.find(s=>s.node===selection.node);s.offset=C.green(s,0,'ew')?s.cycle+1:0;},'信号初始相位已切换');if(e.target.closest('#bridge-remove'))edit(()=>{map.bridges=map.bridges.filter(b=>b.node!==selection.node);selection=null;},'已拆桥，恢复平面路口');});
  $('inspector').addEventListener('click',e=>{
-  if(e.target.closest('#route-start')){const start=selection.node;selectedRoute=null;switchTool('route');routeDraft=[start];hover=start;renderPreview();toast('从当前入口按顺序点击途经点，最后点出口；已有路线会保留');return;}
+  if(e.target.closest('#finish-metro-line')){finishMetroLine();return;}
+  if(e.target.closest('#station-remove')){const station=selection.node;edit(()=>{C.removeStation(map,station);selection=null;},'站台已移除，列车数按公式重新配置');return;}
+  if(e.target.closest('#route-start')){const start=selection.node;selectedRoute=null;switchTool('route');routeDraft=[start];hover=start;renderInspector();renderPreview();toast(isMetro()?'按顺序点途经节点和站台，最后点击完成线路':'从当前入口按顺序点击途经点，最后点出口；已有路线会保留');return;}
   const preview=e.target.closest('[data-preview-route]');
   if(preview){selectedRoute=Number(preview.dataset.previewRoute);switchTool('select');renderInspector();return;}
   if(e.target.closest('#route-show-all')){selectedRoute=null;switchTool('select');renderInspector();return;}
   const remove=e.target.closest('[data-remove-route]');
-  if(remove){const index=Number(remove.dataset.removeRoute);if(map.routes[index]?.nodes[0]!==selection?.node)return;edit(()=>{map.routes.splice(index,1);selectedRoute=null;routeDraft=[];},'已删除这一条路线，其余路线保留；可撤销恢复');}
+  if(remove){const index=Number(remove.dataset.removeRoute);if(!isMetro()&&map.routes[index]?.nodes[0]!==selection?.node)return;edit(()=>{map.routes.splice(index,1);selectedRoute=null;routeDraft=[];},'已删除这一条路线，其余路线保留；可撤销恢复');}
  });
  $('export').addEventListener('click',()=>{
   const text=JSON.stringify(map,null,2),name='路流-交通方案.json';
@@ -249,10 +270,11 @@
   if(e.key==='Escape'){anchor=null;hover=null;routeDraft=[];renderPreview();return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();history(!e.shiftKey);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();history(false);return;}
-  if(!e.ctrlKey&&!e.metaKey&&/^[1-9]$/.test(e.key))switchTool(tools[Number(e.key)-1]);
+  if(!e.ctrlKey&&!e.metaKey&&/^[0-9]$/.test(e.key))switchTool(e.key==='0'?'ramp':tools[Number(e.key)-1]);
   if(e.code==='Space'&&!e.target.closest('button,[data-node]')){e.preventDefault();$('run').click();}
  });
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)setRunning(false,'切换到其他页面时自动暂停，点击开始模拟继续发车。');});
  function frame(now){if(running){if(lastTime)sim.advance(Math.min((now-lastTime)/1000,0.1)*speed);lastTime=now;renderMotion();if(now-lastStats>150){renderStats();lastStats=now;}}requestAnimationFrame(frame);}
- setRunning(false);$('tool-hint').textContent=hints[tool];render();requestAnimationFrame(frame);
+ $('build-level').innerHTML=Array.from({length:C.MAX_LEVEL-C.MIN_LEVEL+1},(_,i)=>{const z=i+C.MIN_LEVEL;return '<option value="'+z+'">'+L.levelName(z)+'</option>';}).join('');
+ setRunning(false);$('tool-hint').textContent=toolHint();render();requestAnimationFrame(frame);
 })();
