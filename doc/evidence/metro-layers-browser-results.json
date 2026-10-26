@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-26T22:39:08.431Z",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "L01 parallel overdraw preserves three independent same-direction roads instead of merging them",
+    "L02 extending the upper road retains its height throughout and leaves lower roads intact",
+    "L03 all three layered streams run and higher road surfaces are drawn after lower cars",
+    "L04 viewing and deleting one level preserves hidden lower roads and supports undo",
+    "L05 explicit ramps, underground layers, undo redo and reload preserve their topology",
+    "L06 layer selection and single-layer inspection work on mobile without horizontal overflow",
+    "M01 metro workspace is independent; six platforms are both entries and exits and configure two trains",
+    "M02 hand-drawn metro lines continue through intermediate platforms and create exactly six coaches per train",
+    "M03 trains actually dwell at intermediate platforms, reverse at terminals and keep their saved line through reset",
+    "M04 changing coach count leaves fleet formula unchanged; removing and undoing a platform updates the fleet",
+    "M05 two-layer metro example, mobile layout, reload and switching workspaces preserve both designs",
+    "M06 two platforms produce zero trains and the third platform creates exactly one six-coach train",
+    "M07 importing a metro map and undo redo across modes rebuilds the correct simulation",
+    "M08 touch input draws track, places dual-purpose platforms and finishes a runnable metro line"
+  ],
+  "errors": []
+}
