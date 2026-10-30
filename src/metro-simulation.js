@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory(typeof module==='object'?require('./core.js'):root.TrafficCore);if(typeof module==='object')module.exports=api;else root.TrafficMetro=api;})(typeof globalThis!=='undefined'?globalThis:this,function(C){
+(function(root,factory){const api=factory(typeof module==='object'?require('./core.js'):root.TrafficCore,typeof module==='object'?require('./metro-passengers.js'):root.TrafficPassengers);if(typeof module==='object')module.exports=api;else root.TrafficMetro=api;})(typeof globalThis!=='undefined'?globalThis:this,function(C,P){
  'use strict';
  const SPEED=1.15,COACH_SPACING=0.4,COACH_LENGTH=0.34,GAP=0.44,CLEAR=0.3,DWELL=2;
  const halfLength=m=>((m.trainCars??6)-1)*COACH_SPACING/2+COACH_LENGTH/2;
@@ -16,6 +16,7 @@
  class MetroSimulation{
   constructor(map){this.map=map;const info=analyse(map);this.lines=info.lines;this.issues=info.issues;this.half=halfLength(map);this.junctions=new Set(C.nodes(map).filter(n=>C.neighbors(map,n,false).length>=3&&!C.bridgeAt(map,n)));this.reset();}
   reset(){
+   this.passengers=new P.PassengerService(this.map.stations,this.lines);
    this.time=0;this.accumulator=0;this.arrived=0;this.totalTravel=0;this.destinations={};this.locks=new Map();this.cars=[];this.trainCount=Math.floor(this.map.stations.length/3);this.nextId=this.trainCount+1;this.turnarounds=0;this.rerouted=0;this.releasedQueues=0;this.reversed=0;this.reverseCar=null;this.pending=this.map.sources.map(()=>null);this.pendingTrains=[];
    for(let i=0;i<this.trainCount;i++){
     const line=this.lines[i%this.lines.length];if(!line){this.pendingTrains.push({id:i+1,line:null});continue;}
@@ -54,11 +55,12 @@
   }
   advance(dt){this.accumulator+=Math.max(0,dt);while(this.accumulator>=1/30-1e-9){this.step(1/30);this.accumulator-=1/30;}}
   step(dt){
-   this.time+=dt;this.dispatch();
+   this.time+=dt;this.passengers.advance(this.time);this.dispatch();
    for(const c of this.cars){
-    if(this.time<c.dwellUntil){c.waiting=true;continue;}
+    c.passengers??=[];
+    if(this.time<c.dwellUntil){this.passengers.service(c,this.time,this.map.trainCars??6);c.waiting=true;continue;}
     if(c.nextStop>=c.stops.length&&!this.turn(c)){c.waiting=true;continue;}
-    if(!c.departed){c.lastDeparture=this.time;c.departed=true;c.station=null;}
+    if(!c.departed){this.passengers.service(c,this.time,this.map.trainCars??6);c.lastDeparture=this.time;c.departed=true;c.station=null;}
     let next=Math.min(c.s+SPEED*dt,c.stops[c.nextStop].position);
     const front=c.s+this.half;
     // Match occupied directed track segments, including other hand-drawn lines.
@@ -76,6 +78,7 @@
     this.update(c);this.release(c);c.waiting=c.s-before<SPEED*dt*0.25;
     if(c.s>=c.stops[c.nextStop].position-1e-8){
      const station=c.stops[c.nextStop].node;c.station=station;c.nextStop++;c.dwellUntil=this.time+DWELL;c.departed=false;c.waiting=true;this.arrived++;this.totalTravel+=this.time-c.lastDeparture;this.destinations[station]=(this.destinations[station]||0)+1;
+     this.passengers.service(c,this.time,this.map.trainCars??6);
     }
    }
   }
