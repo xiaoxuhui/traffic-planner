@@ -1,0 +1,71 @@
+PASS I00 fresh session starts with an unobstructed blank grid
+PASS I25 drag crossing, explicit endpoint joins and user-selected lower road
+PASS I01 empty state and guarded start
+PASS I02 pointer drag draws continuous road
+PASS I03 two-click drawing joins roads
+PASS I04 source shows all reachable routes with random exits
+PASS I05 direction cycle blocks and restores routes
+PASS I06 signal green time preserves selected phase
+PASS I21 same entry spawns cars towards two different exits
+PASS I07 run, 4x speed, arrival and pause
+PASS I28 entry flow and pause reasons are visible
+PASS I08 reset preserves design and clears simulation
+PASS I09 erase facility, undo and redo
+PASS I10 persistence after reload
+PASS I11 export and reimport roundtrip
+PASS I12 invalid import keeps current design
+PASS I22 overpass blocks turns between layers
+PASS I23 deck selection, persistence, removal and undo
+PASS I24 upper and lower cars render in separate layers
+PASS I26 explicit waypoint route followed, multiple routes split to different exits
+PASS I27 broken saved plan pauses cars without automatic rerouting
+PASS I13 keyboard drawing and history shortcuts
+PASS I14 desktop example and layout 1440x1000
+PASS I15 mobile blank-map button, pointer tools and layout 390x844
+PASS I16 help dialog and escape
+PASS I17 touch drawing and overpass tool on mobile
+PASS I19 corrupt saved layout falls back to blank
+PASS I20 mobile sidebar headings have distinct layout
+PASS I30 example gallery closes without replacing the design or triggering background shortcuts
+PASS I31 mobile gallery can load a complex example and undo to the previous design
+PASS I32 city loads its full network and cars actually reach an exit
+PASS I32 elevated loads its full network and cars actually reach an exit
+PASS I32 diamond loads its full network and cars actually reach an exit
+PASS I32 cloverleaf loads its full network and cars actually reach an exit
+PASS I32 panlong loads its full network and cars actually reach an exit
+PASS I32 ring loads its full network and cars actually reach an exit
+PASS I34 reloading the same example resets and pauses the simulation
+PASS I33 loaded example persists after refresh
+PASS R01 draw two different routes from the same entry to the same exit without replacing the other entry plan
+PASS R02 individual preview preserves design; delete one route, undo, redo and refresh preserve other routes
+PASS R03 mobile preview and single deletion work; deleting last entry route returns only that entry to automatic routing
+PASS R04 automatic cars reroute while driving and the visible count confirms it
+PASS I29 new automatic traffic actually uses the previously ignored bypass
+PASS R05 four high-demand manual entries recover from multi-car gridlock and keep arriving with visible coordinated yielding
+PASS R06 coordinated yielding status remains readable on mobile
+PASS R07 manual reverse visibly decreases vehicle position, shows backing state and preserves paused layout
+PASS R08 mobile reverse control fits; after yielding car resumes its exact saved route and reset clears backing state
+PASS L01 parallel overdraw preserves three independent same-direction roads instead of merging them
+PASS L02 extending the upper road retains its height throughout and leaves lower roads intact
+PASS L03 all three layered streams run and higher road surfaces are drawn after lower cars
+PASS L04 viewing and deleting one level preserves hidden lower roads and supports undo
+PASS L05 explicit ramps, underground layers, undo redo and reload preserve their topology
+PASS L06 layer selection and single-layer inspection work on mobile without horizontal overflow
+PASS M01 metro workspace is independent; six platforms are both entries and exits and configure two trains
+PASS M02 hand-drawn metro lines continue through intermediate platforms and create exactly six coaches per train
+PASS M03 trains actually dwell at intermediate platforms, reverse at terminals and keep their saved line through reset
+PASS M04 changing coach count leaves fleet formula unchanged; removing and undoing a platform updates the fleet
+PASS M05 two-layer metro example, mobile layout, reload and switching workspaces preserve both designs
+PASS M06 two platforms produce zero trains and the third platform creates exactly one six-coach train
+PASS M07 importing a metro map and undo redo across modes rebuilds the correct simulation
+PASS M08 touch input draws track, places dual-purpose platforms and finishes a runnable metro line
+PASS P01 every platform starts with visible passengers
+PASS P02 running generates random arrivals and boards actual train coaches
+PASS P03 passengers arrive and displayed totals conserve people without changing the saved design
+PASS P04 pause freezes passengers and selecting a platform lists random destinations
+PASS P05 phone layout fits and reset restores initial passenger state
+PASS P06 mode switching and reload preserve the old metro design and six-coach fleet
+PASS H01 offline hall-shaped subpath loads all relative assets and exports exact JSON through native bridge
+PASS H02 rejected native export shows an error and map edits preserve unrelated storage
+PASS I18 no browser errors
+Browser: 70 passed, 0 failed

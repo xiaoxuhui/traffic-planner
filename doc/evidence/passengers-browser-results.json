@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-30T11:14:51.313Z",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "P01 every platform starts with visible passengers",
+    "P02 running generates random arrivals and boards actual train coaches",
+    "P03 passengers arrive and displayed totals conserve people without changing the saved design",
+    "P04 pause freezes passengers and selecting a platform lists random destinations",
+    "P05 phone layout fits and reset restores initial passenger state",
+    "P06 mode switching and reload preserve the old metro design and six-coach fleet"
+  ],
+  "errors": []
+}

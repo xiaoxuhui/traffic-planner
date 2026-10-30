@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-26T22:39:09.098Z",
+  "date": "2026-10-30T11:14:52.804Z",
   "browser": "151.0.7922.34",
   "checks": [
     "I00 fresh session starts with an unobstructed blank grid",
@@ -63,6 +63,12 @@
     "M06 two platforms produce zero trains and the third platform creates exactly one six-coach train",
     "M07 importing a metro map and undo redo across modes rebuilds the correct simulation",
     "M08 touch input draws track, places dual-purpose platforms and finishes a runnable metro line",
+    "P01 every platform starts with visible passengers",
+    "P02 running generates random arrivals and boards actual train coaches",
+    "P03 passengers arrive and displayed totals conserve people without changing the saved design",
+    "P04 pause freezes passengers and selecting a platform lists random destinations",
+    "P05 phone layout fits and reset restores initial passenger state",
+    "P06 mode switching and reload preserve the old metro design and six-coach fleet",
     "H01 offline hall-shaped subpath loads all relative assets and exports exact JSON through native bridge",
     "H02 rejected native export shows an error and map edits preserve unrelated storage",
     "I18 no browser errors"
